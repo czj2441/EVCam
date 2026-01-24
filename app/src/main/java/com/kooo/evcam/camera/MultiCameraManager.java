@@ -93,6 +93,23 @@ public class MultiCameraManager {
         rightCamera.setCameraPosition("right");
         cameras.put("right", rightCamera);
 
+        // 检测重复的cameraId，只让第一个实例成为主实例
+        Set<String> primaryIds = new HashSet<>();
+        for (Map.Entry<String, SingleCamera> entry : cameras.entrySet()) {
+            SingleCamera camera = entry.getValue();
+            String id = camera.getCameraId();
+            
+            if (primaryIds.add(id)) {
+                // 第一次遇到这个ID，设为主实例
+                camera.setPrimaryInstance(true);
+                AppLog.d(TAG, "Camera " + id + " at position " + entry.getKey() + " set as PRIMARY");
+            } else {
+                // 重复的ID，设为从属实例
+                camera.setPrimaryInstance(false);
+                AppLog.d(TAG, "Camera " + id + " at position " + entry.getKey() + " set as SECONDARY (sharing with primary)");
+            }
+        }
+
         // 为每个摄像头设置回调
         CameraCallback callback = new CameraCallback() {
             @Override
@@ -334,13 +351,25 @@ public class MultiCameraManager {
     }
 
     /**
-     * 开始录制所有摄像头
+     * 开始录制所有摄像头（自动生成时间戳）
      */
     public boolean startRecording() {
+        // 生成统一的时间戳
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+        return startRecording(timestamp);
+    }
+
+    /**
+     * 开始录制所有摄像头（使用指定的时间戳）
+     * @param timestamp 统一的时间戳，用于所有摄像头的文件命名
+     */
+    public boolean startRecording(String timestamp) {
         if (isRecording) {
             AppLog.w(TAG, "Already recording");
             return false;
         }
+
+        AppLog.d(TAG, "Starting recording with timestamp: " + timestamp);
 
         File saveDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "EVCam_Video");
         if (!saveDir.exists()) {
@@ -360,8 +389,7 @@ public class MultiCameraManager {
             if (recorder == null) {
                 continue;
             }
-            // 每个摄像头使用当前时间戳生成文件名：日期_时间_摄像头位置.mp4
-            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            // 所有摄像头使用统一的时间戳：日期_时间_摄像头位置.mp4
             String path = new File(saveDir, timestamp + "_" + key + ".mp4").getAbsolutePath();
             // 只准备 MediaRecorder，获取 Surface
             if (!recorder.prepareRecording(path, RECORD_WIDTH, RECORD_HEIGHT)) {
@@ -524,29 +552,44 @@ public class MultiCameraManager {
     /**
      * 拍照（所有活动的摄像头顺序拍照，避免资源耗尽）
      */
+    /**
+     * 拍照（所有摄像头，自动生成时间戳）
+     */
     public void takePicture() {
+        // 生成统一的时间戳
+        String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                .format(new java.util.Date());
+        takePicture(timestamp);
+    }
+
+    /**
+     * 拍照（所有摄像头，使用指定的时间戳）
+     * @param timestamp 统一的时间戳，用于所有摄像头的文件命名
+     */
+    public void takePicture(String timestamp) {
         List<String> keys = getActiveCameraKeys();
         if (keys.isEmpty()) {
             AppLog.e(TAG, "No active cameras for taking picture");
             return;
         }
 
-        AppLog.d(TAG, "Taking picture with " + keys.size() + " camera(s) sequentially");
+        AppLog.d(TAG, "Taking picture with " + keys.size() + " camera(s) using timestamp: " + timestamp);
 
-        // 顺序拍照，每个摄像头间隔300ms，避免同时发起多个STILL_CAPTURE请求导致资源耗尽
+        // 快速拍照，每个摄像头间隔300ms触发拍照，但保存文件时按顺序延迟2秒
         for (int i = 0; i < keys.size(); i++) {
             final String key = keys.get(i);
-            final int delay = i * 300; // 每个摄像头延迟300ms
+            final int captureDelay = i * 300;      // 拍照触发延迟：300ms（快速抓拍画面）
+            final int saveDelay = i * 2000;        // 文件保存延迟：2秒（分散磁盘I/O）
 
             mainHandler.postDelayed(() -> {
                 SingleCamera camera = cameras.get(key);
                 if (camera != null && camera.isConnected()) {
                     AppLog.d(TAG, "Taking picture with camera " + key);
-                    camera.takePicture();
+                    camera.takePicture(timestamp, saveDelay);  // 传递统一时间戳和保存延迟
                 } else {
                     AppLog.w(TAG, "Camera " + key + " not available for taking picture");
                 }
-            }, delay);
+            }, captureDelay);
         }
     }
 
@@ -570,5 +613,85 @@ public class MultiCameraManager {
             opened++;
         }
         return keys;
+    }
+
+    /**
+     * 检查是否有已连接的相机
+     */
+    public boolean hasConnectedCameras() {
+        for (SingleCamera camera : cameras.values()) {
+            if (camera.isConnected()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 获取已连接的相机数量
+     */
+    public int getConnectedCameraCount() {
+        int count = 0;
+        for (SingleCamera camera : cameras.values()) {
+            if (camera.isConnected()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 生命周期：暂停所有摄像头（App退到后台时调用）
+     * 注意：如果正在录制，不应该调用此方法
+     */
+    public void pauseAllCamerasByLifecycle() {
+        AppLog.d(TAG, "Pausing all cameras by lifecycle");
+        for (SingleCamera camera : cameras.values()) {
+            camera.pauseByLifecycle();
+        }
+    }
+
+    /**
+     * 生命周期：恢复所有摄像头（App返回前台时调用）
+     */
+    public void resumeAllCamerasByLifecycle() {
+        AppLog.d(TAG, "Resuming all cameras by lifecycle");
+        for (SingleCamera camera : cameras.values()) {
+            camera.resumeByLifecycle();
+        }
+    }
+
+    /**
+     * 检查并修复摄像头连接（返回前台时调用）
+     * 如果发现摄像头断开，自动重新打开
+     * @return 需要重新打开的摄像头数量
+     */
+    public int checkAndRepairCameras() {
+        int disconnectedCount = 0;
+        
+        for (Map.Entry<String, SingleCamera> entry : cameras.entrySet()) {
+            SingleCamera camera = entry.getValue();
+            if (!camera.isConnected()) {
+                disconnectedCount++;
+                AppLog.d(TAG, "Camera " + entry.getKey() + " reconnecting...");
+                camera.forceReopen();
+            }
+        }
+        
+        if (disconnectedCount > 0) {
+            AppLog.d(TAG, disconnectedCount + " camera(s) reconnecting");
+        }
+        
+        return disconnectedCount;
+    }
+
+    /**
+     * 强制重新打开所有摄像头（用于从后台返回前台时）
+     */
+    public void forceReopenAllCameras() {
+        AppLog.d(TAG, "Force reopening all cameras...");
+        for (SingleCamera camera : cameras.values()) {
+            camera.forceReopen();
+        }
     }
 }

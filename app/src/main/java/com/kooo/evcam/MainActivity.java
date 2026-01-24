@@ -40,6 +40,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
@@ -89,6 +90,7 @@ public class MainActivity extends AppCompatActivity {
     private String remoteUserId;  // 钉钉用户 ID
     private android.os.Handler autoStopHandler;  // 自动停止录制的 Handler
     private Runnable autoStopRunnable;  // 自动停止录制的 Runnable
+    private String remoteRecordingTimestamp;  // 远程录制统一时间戳（用于文件命名和查找）
 
     // 钉钉服务相关（移到 Activity 级别）
     private DingTalkConfig dingTalkConfig;
@@ -116,6 +118,9 @@ public class MainActivity extends AppCompatActivity {
 
         // 初始化自动停止 Handler
         autoStopHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        
+        // 初始化远程录制时间戳
+        remoteRecordingTimestamp = null;
 
         // 权限检查，但不立即初始化摄像头
         // 等待TextureView准备好后再初始化
@@ -771,8 +776,27 @@ public class MainActivity extends AppCompatActivity {
 
         AppLog.d(TAG, "收到远程录制指令，开始录制 " + durationSeconds + " 秒视频...");
 
-        // 如果正在录制，先停止
-        if (cameraManager != null && cameraManager.isRecording()) {
+        // 第一步：检查摄像头管理器是否初始化
+        if (cameraManager == null) {
+            AppLog.e(TAG, "摄像头管理器未初始化");
+            sendErrorToRemote("摄像头未初始化");
+            return;
+        }
+
+        // 第二步：检查是否有已连接的摄像头
+        if (!cameraManager.hasConnectedCameras()) {
+            AppLog.e(TAG, "没有可用的相机");
+            sendErrorToRemote("没有可用的相机（可能在后台被限制）");
+            return;
+        }
+
+        // 第三步：生成统一的时间戳（用于文件命名和后续查找）
+        remoteRecordingTimestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                .format(new java.util.Date());
+        AppLog.d(TAG, "录制统一时间戳: " + remoteRecordingTimestamp);
+
+        // 第四步：如果正在录制，先停止
+        if (cameraManager.isRecording()) {
             cameraManager.stopRecording();
             try {
                 Thread.sleep(500);  // 等待停止完成
@@ -781,31 +805,26 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // 开始录制
-        if (cameraManager != null) {
-            boolean success = cameraManager.startRecording();
-            if (success) {
-                AppLog.d(TAG, "远程录制已开始");
+        // 第五步：开始录制（使用统一时间戳）
+        boolean success = cameraManager.startRecording(remoteRecordingTimestamp);
+        if (success) {
+            AppLog.d(TAG, "远程录制已开始");
 
-                // 设置指定时长后自动停止
-                autoStopRunnable = () -> {
-                    AppLog.d(TAG, durationSeconds + " 秒录制完成，正在停止...");
-                    cameraManager.stopRecording();
+            // 设置指定时长后自动停止
+            autoStopRunnable = () -> {
+                AppLog.d(TAG, durationSeconds + " 秒录制完成，正在停止...");
+                cameraManager.stopRecording();
 
-                    // 等待录制完全停止
-                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                        uploadRecordedVideos();
-                    }, 1000);
-                };
+                // 等待录制完全停止
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    uploadRecordedVideos();
+                }, 1000);
+            };
 
-                autoStopHandler.postDelayed(autoStopRunnable, durationSeconds * 1000L);  // 转换为毫秒
-            } else {
-                AppLog.e(TAG, "远程录制启动失败");
-                sendErrorToRemote("录制启动失败");
-            }
+            autoStopHandler.postDelayed(autoStopRunnable, durationSeconds * 1000L);  // 转换为毫秒
         } else {
-            AppLog.e(TAG, "摄像头未初始化");
-            sendErrorToRemote("摄像头未初始化");
+            AppLog.e(TAG, "远程录制启动失败");
+            sendErrorToRemote("录制启动失败");
         }
     }
 
@@ -820,19 +839,34 @@ public class MainActivity extends AppCompatActivity {
 
         AppLog.d(TAG, "收到远程拍照指令，开始拍照...");
 
-        // 拍照
-        if (cameraManager != null) {
-            cameraManager.takePicture();
-            AppLog.d(TAG, "远程拍照已执行");
-
-            // 等待拍照完成后上传
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                uploadPhotos();
-            }, 2000);  // 等待2秒确保照片保存完成
-        } else {
-            AppLog.e(TAG, "摄像头未初始化");
+        // 第一步：检查摄像头管理器是否初始化
+        if (cameraManager == null) {
+            AppLog.e(TAG, "摄像头管理器未初始化");
             sendErrorToRemote("摄像头未初始化");
+            return;
         }
+
+        // 第二步：检查是否有已连接的摄像头
+        if (!cameraManager.hasConnectedCameras()) {
+            AppLog.e(TAG, "没有可用的相机");
+            sendErrorToRemote("没有可用的相机（可能在后台被限制）");
+            return;
+        }
+
+        // 第三步：生成统一的时间戳（用于文件命名和后续查找）
+        remoteRecordingTimestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                .format(new java.util.Date());
+        AppLog.d(TAG, "拍照统一时间戳: " + remoteRecordingTimestamp);
+
+        // 第四步：执行拍照（传递统一时间戳）
+        cameraManager.takePicture(remoteRecordingTimestamp);
+        AppLog.d(TAG, "远程拍照已执行（拍照间隔300ms，保存间隔2s）");
+
+        // 等待所有摄像头拍照完成后上传
+        // 时间线：拍照(0-0.9s) + 最后保存延迟(6s) + 保存时间(1s) = 8s
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            uploadPhotos();
+        }, 8000);  // 等待8秒确保所有照片保存完成
     }
 
     /**
@@ -840,6 +874,13 @@ public class MainActivity extends AppCompatActivity {
      */
     private void uploadRecordedVideos() {
         AppLog.d(TAG, "开始上传视频到钉钉...");
+
+        // 检查时间戳
+        if (remoteRecordingTimestamp == null || remoteRecordingTimestamp.isEmpty()) {
+            AppLog.e(TAG, "录制时间戳为空，无法查找视频文件");
+            sendErrorToRemote("录制失败：时间戳丢失");
+            return;
+        }
 
         // 获取录制的视频文件
         File videoDir = new File(android.os.Environment.getExternalStoragePublicDirectory(
@@ -851,30 +892,23 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 获取最新的视频文件（最近 1 分钟内创建的）
-        File[] files = videoDir.listFiles((dir, name) -> name.endsWith(".mp4"));
+        // 直接过滤：只获取本次录制的视频文件（文件名格式: 20260124_235933_front.mp4）
+        File[] files = videoDir.listFiles((dir, name) -> 
+            name.endsWith(".mp4") && name.startsWith(remoteRecordingTimestamp + "_")
+        );
+
         if (files == null || files.length == 0) {
-            AppLog.e(TAG, "没有找到视频文件");
-            sendErrorToRemote("没有找到视频文件");
+            AppLog.e(TAG, "没有找到时间戳为 " + remoteRecordingTimestamp + " 的视频文件（录制可能失败）");
+            sendErrorToRemote("录制失败：未生成视频文件");
             return;
         }
 
-        // 筛选最近 1 分钟内的文件
-        long currentTime = System.currentTimeMillis();
-        List<File> recentFiles = new ArrayList<>();
-        for (File file : files) {
-            if (currentTime - file.lastModified() < 90 * 1000) {  // 90 秒内
-                recentFiles.add(file);
-            }
+        // 转换为 List 并记录日志
+        List<File> recentFiles = new ArrayList<>(Arrays.asList(files));
+        AppLog.d(TAG, "找到 " + recentFiles.size() + " 个时间戳为 " + remoteRecordingTimestamp + " 的视频文件");
+        for (File file : recentFiles) {
+            AppLog.d(TAG, "  - " + file.getName());
         }
-
-        if (recentFiles.isEmpty()) {
-            AppLog.e(TAG, "没有找到最近录制的视频");
-            sendErrorToRemote("没有找到最近录制的视频");
-            return;
-        }
-
-        AppLog.d(TAG, "找到 " + recentFiles.size() + " 个视频文件");
 
         // 使用 Activity 级别的 API 客户端
         if (dingTalkApiClient != null && remoteConversationId != null) {
@@ -909,6 +943,13 @@ public class MainActivity extends AppCompatActivity {
     private void uploadPhotos() {
         AppLog.d(TAG, "开始上传照片到钉钉...");
 
+        // 检查时间戳
+        if (remoteRecordingTimestamp == null || remoteRecordingTimestamp.isEmpty()) {
+            AppLog.e(TAG, "拍照时间戳为空，无法查找照片文件");
+            sendErrorToRemote("拍照失败：时间戳丢失");
+            return;
+        }
+
         // 获取照片文件
         File photoDir = new File(android.os.Environment.getExternalStoragePublicDirectory(
                 android.os.Environment.DIRECTORY_DCIM), "EVCam_Photo");
@@ -919,30 +960,24 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 获取最新的照片文件（最近 10 秒内创建的）
-        File[] files = photoDir.listFiles((dir, name) -> name.endsWith(".jpg"));
+        // 直接过滤：只获取本次拍摄的照片文件（精确匹配时间戳，秒级）
+        // 文件名格式: 20260124_235933_front.jpg
+        File[] files = photoDir.listFiles((dir, name) -> 
+            name.endsWith(".jpg") && name.startsWith(remoteRecordingTimestamp + "_")
+        );
+
         if (files == null || files.length == 0) {
-            AppLog.e(TAG, "没有找到照片文件");
-            sendErrorToRemote("没有找到照片文件");
+            AppLog.e(TAG, "没有找到时间戳为 " + remoteRecordingTimestamp + " 的照片文件（拍照可能失败）");
+            sendErrorToRemote("拍照失败：未生成照片文件");
             return;
         }
 
-        // 筛选最近 10 秒内的文件
-        long currentTime = System.currentTimeMillis();
-        List<File> recentFiles = new ArrayList<>();
-        for (File file : files) {
-            if (currentTime - file.lastModified() < 10 * 1000) {  // 10 秒内
-                recentFiles.add(file);
-            }
+        // 转换为 List 并记录日志
+        List<File> recentFiles = new ArrayList<>(Arrays.asList(files));
+        AppLog.d(TAG, "找到 " + recentFiles.size() + " 张时间戳为 " + remoteRecordingTimestamp + " 的照片");
+        for (File file : recentFiles) {
+            AppLog.d(TAG, "  - " + file.getName());
         }
-
-        if (recentFiles.isEmpty()) {
-            AppLog.e(TAG, "没有找到最近拍摄的照片");
-            sendErrorToRemote("没有找到最近拍摄的照片");
-            return;
-        }
-
-        AppLog.d(TAG, "找到 " + recentFiles.size() + " 张照片");
 
         // 使用 Activity 级别的 API 客户端
         if (dingTalkApiClient != null && remoteConversationId != null) {
@@ -982,8 +1017,15 @@ public class MainActivity extends AppCompatActivity {
         if (dingTalkApiClient != null) {
             new Thread(() -> {
                 try {
+                    // 延迟1秒发送错误消息，确保确认消息（Webhook）先到达钉钉并被用户看到
+                    // 原因：虽然现在命令已在确认消息发送后执行，但仍需考虑网络延迟和服务器处理时间
+                    AppLog.d(TAG, "错误消息将在1秒后发送，确保确认消息先到达...");
+                    Thread.sleep(1000);
+                    
                     dingTalkApiClient.sendTextMessage(remoteConversationId, remoteConversationType, "录制失败: " + error, remoteUserId);
                     AppLog.d(TAG, "错误消息已发送到钉钉");
+                } catch (InterruptedException e) {
+                    AppLog.w(TAG, "错误消息延迟被中断");
                 } catch (Exception e) {
                     AppLog.e(TAG, "发送错误消息失败", e);
                 }
@@ -1104,6 +1146,59 @@ public class MainActivity extends AppCompatActivity {
         Fragment fragment = fragmentManager.findFragmentById(R.id.fragment_container);
         if (fragment instanceof RemoteViewFragment) {
             ((RemoteViewFragment) fragment).updateServiceStatus();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        AppLog.d(TAG, "onPause called, isRecording=" + isRecording);
+        
+        // 在后台时，Android 11会禁用摄像头访问（policy限制）
+        // 需要停止所有重连尝试，避免无效的重连循环
+        if (cameraManager != null) {
+            // 通知所有摄像头：不要再自动重连了（后台限制）
+            // 返回前台时会自动检查并重新连接
+            AppLog.w(TAG, "App entering background, cameras may be restricted by Android 11+ policy");
+        }
+        
+        // 注意：暂时不主动关闭摄像头，因为：
+        // 1. 如果正在录制，需要保持（第二步会用前台服务保护）
+        // 2. 如果需要响应钉钉命令，也需要保持
+        // 但如果Android 11强制剥夺权限，会触发ERROR_CAMERA_DISABLED，此时会自动停止重连
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        AppLog.d(TAG, "onResume called");
+        
+        // 返回前台时，检查摄像头连接状态
+        if (cameraManager != null) {
+            // 延迟1秒后检查，给系统足够时间释放资源
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                // 只在没有正在录制时检查（录制时摄像头应该保持连接）
+                if (!isRecording) {
+                    int disconnectedCount = cameraManager.checkAndRepairCameras();
+                    if (disconnectedCount > 0) {
+                        // 延迟2秒后检查重连结果
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            int connectedCount = cameraManager.getConnectedCameraCount();
+                            if (connectedCount > 0) {
+                                runOnUiThread(() -> {
+                                    Toast.makeText(MainActivity.this, 
+                                        "摄像头已连接", 
+                                        Toast.LENGTH_SHORT).show();
+                                });
+                            }
+                        }, 2000);
+                    } else {
+                        AppLog.d(TAG, "All cameras are connected");
+                    }
+                } else {
+                    AppLog.d(TAG, "Recording in progress, skipping camera check");
+                }
+            }, 1000);
         }
     }
 

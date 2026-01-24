@@ -81,6 +81,12 @@ public class PhotoUploadService {
 
                         uploadedFiles.add(photoFile.getName());
 
+                        // 3. 延迟2秒后再上传下一张照片，减少网络和系统压力
+                        if (i < photoFiles.size() - 1) {  // 不是最后一张照片
+                            callback.onProgress("等待2秒后上传下一张照片...");
+                            Thread.sleep(2000);
+                        }
+
                     } catch (Exception e) {
                         AppLog.e(TAG, "上传图片失败: " + photoFile.getName(), e);
                         callback.onError("上传失败: " + photoFile.getName() + " - " + e.getMessage());

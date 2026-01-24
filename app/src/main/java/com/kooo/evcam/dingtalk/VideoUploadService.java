@@ -98,6 +98,12 @@ public class VideoUploadService {
                             thumbnailFile.delete();
                         }
 
+                        // 7. 延迟2秒后再上传下一个视频，减少网络和系统压力
+                        if (i < videoFiles.size() - 1) {  // 不是最后一个视频
+                            callback.onProgress("等待2秒后上传下一个视频...");
+                            Thread.sleep(2000);
+                        }
+
                     } catch (Exception e) {
                         AppLog.e(TAG, "上传视频失败: " + videoFile.getName(), e);
                         callback.onError("上传失败: " + videoFile.getName() + " - " + e.getMessage());

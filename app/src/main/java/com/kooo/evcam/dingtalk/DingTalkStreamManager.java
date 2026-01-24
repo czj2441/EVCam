@@ -276,27 +276,31 @@ public class DingTalkStreamManager {
                 if (command.startsWith("录制") || command.toLowerCase().startsWith("record")) {
                     AppLog.d(TAG, "收到录制指令，时长: " + durationSeconds + " 秒");
 
-                    // 发送确认消息
+                    // 发送确认消息，并在发送完成后执行录制命令
                     String confirmMsg = String.format("收到录制指令，开始录制 %d 秒视频...", durationSeconds);
-                    sendResponse(sessionWebhook, confirmMsg);
-
-                    // 通知监听器执行录制，传递 conversationType、senderId 和时长
                     String finalConversationId = conversationId;
                     String finalConversationType = conversationType;
                     String finalSenderId = senderId;
-                    mainHandler.post(() -> commandCallback.onRecordCommand(finalConversationId, finalConversationType, finalSenderId, durationSeconds));
+                    
+                    sendResponseAndThen(sessionWebhook, confirmMsg, () -> {
+                        // 确认消息发送完成后，再执行录制命令
+                        mainHandler.post(() -> commandCallback.onRecordCommand(
+                            finalConversationId, finalConversationType, finalSenderId, durationSeconds));
+                    });
 
                 } else if ("拍照".equals(command) || "photo".equalsIgnoreCase(command)) {
                     AppLog.d(TAG, "收到拍照指令");
 
-                    // 发送确认消息
-                    sendResponse(sessionWebhook, "收到拍照指令，正在拍照...");
-
-                    // 通知监听器执行拍照，传递 conversationType 和 senderId
+                    // 发送确认消息，并在发送完成后执行拍照命令
                     String finalConversationId = conversationId;
                     String finalConversationType = conversationType;
                     String finalSenderId = senderId;
-                    mainHandler.post(() -> commandCallback.onPhotoCommand(finalConversationId, finalConversationType, finalSenderId));
+                    
+                    sendResponseAndThen(sessionWebhook, "收到拍照指令，正在拍照...", () -> {
+                        // 确认消息发送完成后，再执行拍照命令
+                        mainHandler.post(() -> commandCallback.onPhotoCommand(
+                            finalConversationId, finalConversationType, finalSenderId));
+                    });
 
                 } else if ("帮助".equals(command) || "help".equalsIgnoreCase(command)) {
                     sendResponse(sessionWebhook,
@@ -376,6 +380,33 @@ public class DingTalkStreamManager {
                     AppLog.d(TAG, "响应消息已发送: " + message);
                 } catch (Exception e) {
                     AppLog.e(TAG, "发送响应消息失败", e);
+                }
+            }).start();
+        }
+
+        /**
+         * 发送响应消息到钉钉，并在发送完成后执行回调
+         * @param sessionWebhook Webhook URL
+         * @param message 消息内容
+         * @param callback 发送完成后的回调
+         */
+        private void sendResponseAndThen(String sessionWebhook, String message, Runnable callback) {
+            new Thread(() -> {
+                try {
+                    // 发送确认消息
+                    apiClient.sendMessageViaWebhook(sessionWebhook, message);
+                    AppLog.d(TAG, "响应消息已发送: " + message);
+                    
+                    // 发送成功后执行回调
+                    if (callback != null) {
+                        callback.run();
+                    }
+                } catch (Exception e) {
+                    AppLog.e(TAG, "发送响应消息失败", e);
+                    // 即使发送失败，也执行回调（避免命令被阻塞）
+                    if (callback != null) {
+                        callback.run();
+                    }
                 }
             }).start();
         }
