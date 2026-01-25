@@ -11,6 +11,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
+        android:gravity="center_vertical"
         android:background="@color/menu_background">
 
         <Button
@@ -32,8 +33,7 @@
             android:text="软件设置"
             android:textColor="@color/text_primary"
             android:textSize="28sp"
-            android:textStyle="bold"
-            android:gravity="center_vertical" />
+            android:textStyle="bold" />
     </LinearLayout>
 
     <!-- Settings content -->
