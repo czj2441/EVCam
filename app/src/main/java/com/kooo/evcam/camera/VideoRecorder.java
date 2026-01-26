@@ -27,7 +27,7 @@ public class VideoRecorder {
     private String currentFilePath;
 
     // 分段录制相关
-    private static final long SEGMENT_DURATION_MS = 60000;  // 1分钟
+    private long segmentDurationMs = 60000;  // 分段时长，默认1分钟，可通过 setSegmentDuration 配置
     private static final long FILE_SIZE_CHECK_INTERVAL_MS = 5000;  // 每5秒检查一次文件大小
     private android.os.Handler segmentHandler;
     private Runnable segmentRunnable;
@@ -46,6 +46,22 @@ public class VideoRecorder {
 
     public void setCallback(RecordCallback callback) {
         this.callback = callback;
+    }
+
+    /**
+     * 设置分段时长
+     * @param durationMs 分段时长（毫秒）
+     */
+    public void setSegmentDuration(long durationMs) {
+        this.segmentDurationMs = durationMs;
+        AppLog.d(TAG, "Camera " + cameraId + " segment duration set to " + (durationMs / 1000) + " seconds");
+    }
+
+    /**
+     * 获取分段时长（毫秒）
+     */
+    public long getSegmentDuration() {
+        return segmentDurationMs;
     }
 
     public boolean isRecording() {
@@ -292,9 +308,9 @@ public class VideoRecorder {
             }
         };
 
-        // 延迟执行（1分钟后）
-        segmentHandler.postDelayed(segmentRunnable, SEGMENT_DURATION_MS);
-        AppLog.d(TAG, "Camera " + cameraId + " scheduled next segment in " + (SEGMENT_DURATION_MS / 1000) + " seconds");
+        // 延迟执行（使用配置的分段时长）
+        segmentHandler.postDelayed(segmentRunnable, segmentDurationMs);
+        AppLog.d(TAG, "Camera " + cameraId + " scheduled next segment in " + (segmentDurationMs / 1000) + " seconds");
     }
 
     /**

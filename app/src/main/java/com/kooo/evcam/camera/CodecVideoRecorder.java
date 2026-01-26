@@ -76,7 +76,7 @@ public class CodecVideoRecorder {
     private long encodedOutputFrameCount = 0;
 
     // 分段录制相关
-    private static final long SEGMENT_DURATION_MS = 60000;  // 1分钟
+    private long segmentDurationMs = 60000;  // 分段时长，默认1分钟，可通过 setSegmentDuration 配置
     private Handler segmentHandler;
     private Runnable segmentRunnable;
     private int segmentIndex = 0;
@@ -107,6 +107,22 @@ public class CodecVideoRecorder {
 
     public void setCallback(RecordCallback callback) {
         this.callback = callback;
+    }
+
+    /**
+     * 设置分段时长
+     * @param durationMs 分段时长（毫秒）
+     */
+    public void setSegmentDuration(long durationMs) {
+        this.segmentDurationMs = durationMs;
+        AppLog.d(TAG, "Camera " + cameraId + " segment duration set to " + (durationMs / 1000) + " seconds");
+    }
+
+    /**
+     * 获取分段时长（毫秒）
+     */
+    public long getSegmentDuration() {
+        return segmentDurationMs;
     }
 
     /**
@@ -590,8 +606,8 @@ public class CodecVideoRecorder {
             }
         };
 
-        segmentHandler.postDelayed(segmentRunnable, SEGMENT_DURATION_MS);
-        AppLog.d(TAG, "Camera " + cameraId + " Scheduled next segment in " + (SEGMENT_DURATION_MS / 1000) + " seconds");
+        segmentHandler.postDelayed(segmentRunnable, segmentDurationMs);
+        AppLog.d(TAG, "Camera " + cameraId + " Scheduled next segment in " + (segmentDurationMs / 1000) + " seconds");
     }
 
     /**
@@ -669,9 +685,9 @@ public class CodecVideoRecorder {
                     + (RECOVERY_RETRY_INTERVAL_MS / 1000) + "s (attempt " + recoveryAttempts + "/" + MAX_RECOVERY_ATTEMPTS + ")");
                 scheduleRecoveryRetry();
             } else {
-                // 超过最大重试次数，回到正常1分钟间隔
+                // 超过最大重试次数，回到正常分段间隔
                 AppLog.w(TAG, "Camera " + cameraId + " Max recovery attempts reached, will retry in " 
-                    + (SEGMENT_DURATION_MS / 1000) + " seconds");
+                    + (segmentDurationMs / 1000) + " seconds");
                 recoveryAttempts = 0;  // 重置计数器
                 segmentHandler.post(() -> scheduleNextSegment());
             }
@@ -750,7 +766,7 @@ public class CodecVideoRecorder {
                 scheduleRecoveryRetry();
             } else {
                 AppLog.w(TAG, "Camera " + cameraId + " Max recovery attempts reached, will retry in " 
-                    + (SEGMENT_DURATION_MS / 1000) + " seconds");
+                    + (segmentDurationMs / 1000) + " seconds");
                 recoveryAttempts = 0;
                 segmentHandler.post(() -> scheduleNextSegment());
             }

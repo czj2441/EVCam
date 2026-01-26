@@ -1,6 +1,7 @@
 package com.kooo.evcam.camera;
 
 
+import com.kooo.evcam.AppConfig;
 import com.kooo.evcam.AppLog;
 import com.kooo.evcam.StorageHelper;
 import android.content.Context;
@@ -479,6 +480,11 @@ public class MultiCameraManager {
             return false;
         }
 
+        // 获取分段时长配置
+        AppConfig appConfig = new AppConfig(context);
+        long segmentDurationMs = appConfig.getSegmentDurationMs();
+        AppLog.d(TAG, "Segment duration: " + (segmentDurationMs / 1000) + " seconds (" + appConfig.getSegmentDurationMinutes() + " minutes)");
+
         // 第一步：准备所有 MediaRecorder（但不启动）
         // 使用每个摄像头的实际预览分辨率，而不是硬编码的值
         boolean prepareSuccess = true;
@@ -495,6 +501,9 @@ public class MultiCameraManager {
                 AppLog.e(TAG, "Camera " + key + " preview size not available, using fallback 1280x720");
                 previewSize = new Size(1280, 720);  // 回退到常见分辨率
             }
+            
+            // 设置分段时长
+            recorder.setSegmentDuration(segmentDurationMs);
             
             // 所有摄像头使用统一的时间戳：日期_时间_摄像头位置.mp4
             String path = new File(saveDir, timestamp + "_" + key + ".mp4").getAbsolutePath();
@@ -604,6 +613,11 @@ public class MultiCameraManager {
             return false;
         }
 
+        // 获取分段时长配置
+        AppConfig appConfig = new AppConfig(context);
+        long segmentDurationMs = appConfig.getSegmentDurationMs();
+        AppLog.d(TAG, "Codec segment duration: " + (segmentDurationMs / 1000) + " seconds (" + appConfig.getSegmentDurationMinutes() + " minutes)");
+
         // 清理之前的软编码录制器
         for (CodecVideoRecorder recorder : codecRecorders.values()) {
             recorder.release();
@@ -631,6 +645,9 @@ public class MultiCameraManager {
                     previewSize.getWidth(), 
                     previewSize.getHeight()
             );
+
+            // 设置分段时长
+            codecRecorder.setSegmentDuration(segmentDurationMs);
 
             // 设置回调
             codecRecorder.setCallback(new RecordCallback() {

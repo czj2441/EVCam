@@ -64,6 +64,12 @@ public class SettingsFragment extends Fragment {
     private boolean isInitializingRecordingMode = false;
     private String lastAppliedRecordingMode = null;
     
+    // 分段时长配置相关
+    private Spinner segmentDurationSpinner;
+    private static final String[] SEGMENT_DURATION_OPTIONS = {"1分钟", "3分钟", "5分钟"};
+    private boolean isInitializingSegmentDuration = false;
+    private int lastAppliedSegmentDuration = -1;
+    
     // 存储位置配置相关
     private Spinner storageLocationSpinner;
     private TextView storageLocationDescText;
@@ -115,6 +121,9 @@ public class SettingsFragment extends Fragment {
             
             // 初始化录制模式配置
             initRecordingModeConfig(view);
+            
+            // 初始化分段时长配置
+            initSegmentDurationConfig(view);
             
             // 初始化存储位置配置
             initStorageLocationConfig(view);
@@ -656,6 +665,80 @@ public class SettingsFragment extends Fragment {
         if (recordingModeDescText != null) {
             recordingModeDescText.setText(desc);
         }
+    }
+    
+    /**
+     * 初始化分段时长配置
+     */
+    private void initSegmentDurationConfig(View view) {
+        segmentDurationSpinner = view.findViewById(R.id.spinner_segment_duration);
+        
+        if (segmentDurationSpinner == null || getContext() == null) {
+            return;
+        }
+        
+        isInitializingSegmentDuration = true;
+        lastAppliedSegmentDuration = (appConfig != null) ? appConfig.getSegmentDurationMinutes() : AppConfig.SEGMENT_DURATION_1_MIN;
+        
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                getContext(),
+                R.layout.spinner_item,
+                SEGMENT_DURATION_OPTIONS
+        );
+        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        segmentDurationSpinner.setAdapter(adapter);
+        
+        segmentDurationSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                int newDuration;
+                String durationName;
+                
+                if (position == 0) {
+                    newDuration = AppConfig.SEGMENT_DURATION_1_MIN;
+                    durationName = "1分钟";
+                } else if (position == 1) {
+                    newDuration = AppConfig.SEGMENT_DURATION_3_MIN;
+                    durationName = "3分钟";
+                } else {
+                    newDuration = AppConfig.SEGMENT_DURATION_5_MIN;
+                    durationName = "5分钟";
+                }
+                
+                if (isInitializingSegmentDuration) {
+                    return;
+                }
+                
+                if (newDuration == lastAppliedSegmentDuration) {
+                    return;
+                }
+                
+                lastAppliedSegmentDuration = newDuration;
+                appConfig.setSegmentDurationMinutes(newDuration);
+                
+                if (getContext() != null) {
+                    Toast.makeText(getContext(), "分段时长已设置为「" + durationName + "」，下次录制生效", Toast.LENGTH_SHORT).show();
+                }
+            }
+            
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        
+        // 根据当前配置设置选中项
+        int currentDuration = appConfig.getSegmentDurationMinutes();
+        int selectedIndex = 0;  // 默认1分钟
+        if (currentDuration == AppConfig.SEGMENT_DURATION_3_MIN) {
+            selectedIndex = 1;
+        } else if (currentDuration == AppConfig.SEGMENT_DURATION_5_MIN) {
+            selectedIndex = 2;
+        }
+        segmentDurationSpinner.setSelection(selectedIndex);
+        
+        segmentDurationSpinner.post(() -> {
+            isInitializingSegmentDuration = false;
+        });
     }
     
     /**
