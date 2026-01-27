@@ -124,6 +124,7 @@
             android:textSize="13sp"
             android:textColor="#666666"
             android:lineSpacingExtra="3dp"
+            android:gravity="center"
             android:layout_marginBottom="12dp" />
 
         <!-- 打赏支持 -->
@@ -134,13 +135,14 @@
             android:textSize="13sp"
             android:textColor="#1976D2"
             android:textStyle="bold"
+            android:gravity="center"
             android:layout_marginBottom="12dp" />
 
-        <!-- 二维码图片 -->
+        <!-- 二维码图片（尺寸在代码中根据屏幕密度动态设置） -->
         <ImageView
             android:id="@+id/iv_qrcode"
-            android:layout_width="200dp"
-            android:layout_height="200dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:scaleType="fitCenter"
             android:contentDescription="打赏二维码"

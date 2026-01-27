@@ -176,6 +176,14 @@ public class MainActivity extends AppCompatActivity {
             AppLog.d(TAG, "定时保活任务已禁用，跳过启动");
         }
         
+        // 启动防止休眠（如果用户启用了）
+        if (appConfig.isPreventSleepEnabled()) {
+            WakeUpHelper.acquirePersistentWakeLock(this);
+            AppLog.d(TAG, "防止休眠已启用，系统将不会进入深度休眠");
+        } else {
+            AppLog.d(TAG, "防止休眠已禁用，系统可正常休眠");
+        }
+        
         // 启动存储清理任务（如果用户设置了限制）
         storageCleanupManager = new StorageCleanupManager(this);
         storageCleanupManager.start();
@@ -810,6 +818,49 @@ public class MainActivity extends AppCompatActivity {
      * 加载打赏二维码图片（URL经过混淆处理）
      */
     private void loadQrcodeImage(android.widget.ImageView imageView) {
+        // 根据屏幕密度动态设置二维码尺寸
+        // 低DPI大屏设备使用更大尺寸，高DPI设备使用适中尺寸
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        float density = dm.density;
+        int screenWidthPx = dm.widthPixels;
+        
+        // 计算二维码尺寸（像素）
+        // density: mdpi=1.0, hdpi=1.5, xhdpi=2.0, xxhdpi=3.0, xxxhdpi=4.0
+        int qrcodeSizePx;
+        if (density <= 1.0f) {
+<<<<<<< Current (Your changes)
+            // mdpi 或更低密度（大屏低DPI设备）：使用屏幕宽度的25%
+            qrcodeSizePx = (int) (screenWidthPx * 0.25f);
+        } else if (density <= 1.5f) {
+            // hdpi：使用屏幕宽度的22%
+            qrcodeSizePx = (int) (screenWidthPx * 0.22f);
+        } else if (density <= 2.0f) {
+            // xhdpi：使用屏幕宽度的20%
+            qrcodeSizePx = (int) (screenWidthPx * 0.20f);
+        } else {
+            // xxhdpi 及以上（高密度设备）：使用屏幕宽度的18%
+            qrcodeSizePx = (int) (screenWidthPx * 0.18f);
+=======
+            // mdpi 或更低密度（大屏低DPI设备）：使用屏幕宽度的50%
+            qrcodeSizePx = (int) (screenWidthPx * 0.50f);
+        } else if (density <= 1.5f) {
+            // hdpi：使用屏幕宽度的45%
+            qrcodeSizePx = (int) (screenWidthPx * 0.45f);
+        } else if (density <= 2.0f) {
+            // xhdpi：使用屏幕宽度的40%
+            qrcodeSizePx = (int) (screenWidthPx * 0.40f);
+        } else {
+            // xxhdpi 及以上（高密度设备）：使用屏幕宽度的35%
+            qrcodeSizePx = (int) (screenWidthPx * 0.35f);
+>>>>>>> Incoming (Background Agent changes)
+        }
+        
+        // 设置ImageView尺寸
+        android.view.ViewGroup.LayoutParams params = imageView.getLayoutParams();
+        params.width = qrcodeSizePx;
+        params.height = qrcodeSizePx;
+        imageView.setLayoutParams(params);
+        
         // URL混淆存储，防止被轻易修改
         // 原始URL经过Base64编码后分段存储
         final String[] p = {

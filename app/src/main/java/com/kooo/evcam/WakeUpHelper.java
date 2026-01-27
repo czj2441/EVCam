@@ -14,8 +14,11 @@ import android.provider.Settings;
 public class WakeUpHelper {
     private static final String TAG = "WakeUpHelper";
 
-    // CPU唤醒锁（不亮屏）
+    // CPU唤醒锁（不亮屏）- 用于远程命令（有超时）
     private static PowerManager.WakeLock wakeLock;
+    
+    // 持续唤醒锁 - 用于防止休眠（无超时）
+    private static PowerManager.WakeLock persistentWakeLock;
 
     /**
      * 检查是否有悬浮窗权限（用于后台启动Activity）
@@ -81,6 +84,60 @@ public class WakeUpHelper {
             }
         }
         wakeLock = null;
+    }
+    
+    /**
+     * 获取持续唤醒锁（防止系统休眠）
+     * 用于需要长期保持CPU运行的场景，如车机熄火后仍需接收远程消息
+     * 注意：会增加功耗，需要用户明确开启
+     */
+    public static void acquirePersistentWakeLock(Context context) {
+        AppLog.d(TAG, "Acquiring persistent wake lock (prevent sleep)...");
+
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        if (pm == null) {
+            AppLog.e(TAG, "PowerManager is null");
+            return;
+        }
+
+        // 如果已经持有，不重复获取
+        if (persistentWakeLock != null && persistentWakeLock.isHeld()) {
+            AppLog.d(TAG, "Persistent WakeLock already held");
+            return;
+        }
+
+        // 创建持续唤醒锁
+        // PARTIAL_WAKE_LOCK: 只保持CPU运行，不亮屏
+        persistentWakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "EVCam:PreventSleep"
+        );
+
+        // 持有唤醒锁，不设置超时（直到手动释放）
+        persistentWakeLock.acquire();
+        AppLog.d(TAG, "Persistent WakeLock acquired (no timeout) - system will not sleep");
+    }
+    
+    /**
+     * 释放持续唤醒锁
+     */
+    public static void releasePersistentWakeLock() {
+        if (persistentWakeLock != null && persistentWakeLock.isHeld()) {
+            try {
+                persistentWakeLock.release();
+                AppLog.d(TAG, "Persistent WakeLock released - system can sleep now");
+            } catch (Exception e) {
+                AppLog.e(TAG, "Failed to release persistent WakeLock", e);
+            }
+        }
+        persistentWakeLock = null;
+    }
+    
+    /**
+     * 检查持续唤醒锁是否被持有
+     */
+    public static boolean isPersistentWakeLockHeld() {
+        return persistentWakeLock != null && persistentWakeLock.isHeld();
     }
 
     /**

@@ -12,12 +12,14 @@
         android:orientation="horizontal"
         android:padding="8dp"
         android:gravity="center_vertical"
+        android:baselineAligned="false"
         android:background="@color/menu_background">
 
         <Button
             android:id="@+id/btn_back"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
             android:text="←"
             android:textSize="18sp"
             android:minWidth="48dp"
@@ -30,6 +32,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_gravity="center_vertical"
             android:text="权限设置"
             android:textColor="@color/text_primary"
             android:textSize="28sp"

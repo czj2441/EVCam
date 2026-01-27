@@ -38,6 +38,7 @@ public class SettingsFragment extends Fragment {
     private Button saveLogsButton;
     private SwitchMaterial autoStartSwitch;
     private SwitchMaterial keepAliveSwitch;
+    private SwitchMaterial preventSleepSwitch;
     private SwitchMaterial recordingStatsSwitch;
     private AppConfig appConfig;
     
@@ -223,6 +224,29 @@ public class SettingsFragment extends Fragment {
             }
         });
 
+        // 初始化防止休眠开关
+        preventSleepSwitch = view.findViewById(R.id.switch_prevent_sleep);
+        if (getContext() != null && appConfig != null) {
+            preventSleepSwitch.setChecked(appConfig.isPreventSleepEnabled());
+        }
+
+        // 设置防止休眠开关监听器
+        preventSleepSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (getContext() != null && appConfig != null) {
+                appConfig.setPreventSleepEnabled(isChecked);
+                
+                if (isChecked) {
+                    WakeUpHelper.acquirePersistentWakeLock(getContext());
+                    Toast.makeText(getContext(), "防止休眠已启用，系统将不会进入深度休眠", Toast.LENGTH_SHORT).show();
+                    AppLog.d("SettingsFragment", "防止休眠已启用");
+                } else {
+                    WakeUpHelper.releasePersistentWakeLock();
+                    Toast.makeText(getContext(), "防止休眠已禁用，系统可正常休眠", Toast.LENGTH_SHORT).show();
+                    AppLog.d("SettingsFragment", "防止休眠已禁用");
+                }
+            }
+        });
+
         // 初始化悬浮窗设置
         initFloatingWindowSettings(view);
 
@@ -266,7 +290,50 @@ public class SettingsFragment extends Fragment {
      * 加载打赏二维码图片（URL经过混淆处理）
      */
     private void loadQrcodeImage(android.widget.ImageView imageView) {
-        if (getActivity() == null) return;
+        if (getActivity() == null || getContext() == null) return;
+        
+        // 根据屏幕密度动态设置二维码尺寸
+        // 低DPI大屏设备使用更大尺寸，高DPI设备使用适中尺寸
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        float density = dm.density;
+        int screenWidthPx = dm.widthPixels;
+        
+        // 计算二维码尺寸（像素）
+        // density: mdpi=1.0, hdpi=1.5, xhdpi=2.0, xxhdpi=3.0, xxxhdpi=4.0
+        int qrcodeSizePx;
+        if (density <= 1.0f) {
+<<<<<<< Current (Your changes)
+            // mdpi 或更低密度（大屏低DPI设备）：使用屏幕宽度的25%
+            qrcodeSizePx = (int) (screenWidthPx * 0.25f);
+        } else if (density <= 1.5f) {
+            // hdpi：使用屏幕宽度的22%
+            qrcodeSizePx = (int) (screenWidthPx * 0.22f);
+        } else if (density <= 2.0f) {
+            // xhdpi：使用屏幕宽度的20%
+            qrcodeSizePx = (int) (screenWidthPx * 0.20f);
+        } else {
+            // xxhdpi 及以上（高密度设备）：使用屏幕宽度的18%
+            qrcodeSizePx = (int) (screenWidthPx * 0.18f);
+=======
+            // mdpi 或更低密度（大屏低DPI设备）：使用屏幕宽度的50%
+            qrcodeSizePx = (int) (screenWidthPx * 0.50f);
+        } else if (density <= 1.5f) {
+            // hdpi：使用屏幕宽度的45%
+            qrcodeSizePx = (int) (screenWidthPx * 0.45f);
+        } else if (density <= 2.0f) {
+            // xhdpi：使用屏幕宽度的40%
+            qrcodeSizePx = (int) (screenWidthPx * 0.40f);
+        } else {
+            // xxhdpi 及以上（高密度设备）：使用屏幕宽度的35%
+            qrcodeSizePx = (int) (screenWidthPx * 0.35f);
+>>>>>>> Incoming (Background Agent changes)
+        }
+        
+        // 设置ImageView尺寸
+        android.view.ViewGroup.LayoutParams params = imageView.getLayoutParams();
+        params.width = qrcodeSizePx;
+        params.height = qrcodeSizePx;
+        imageView.setLayoutParams(params);
         
         // URL混淆存储，防止被轻易修改
         // 原始URL经过Base64编码后分段存储
@@ -962,18 +1029,27 @@ public class SettingsFragment extends Fragment {
                 StorageHelper.getVideoDir(getContext(), false);
         String path = videoDir.getAbsolutePath();
         
+        // 获取内部存储根路径用于判断
+        String internalRoot = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+        
         // 简化路径显示
         String displayPath;
-        if (path.startsWith("/storage/emulated/0/")) {
-            displayPath = path.replace("/storage/emulated/0/", "内部存储/");
-        } else if (path.startsWith("/storage/")) {
+        if (path.startsWith(internalRoot + "/")) {
+            // 是内部存储
+            displayPath = path.replace(internalRoot + "/", "内部存储/");
+        } else if (path.startsWith("/storage/emulated/")) {
+            // 其他 emulated 路径也是内部存储
+            displayPath = "内部存储" + path.substring(path.indexOf("/", "/storage/emulated/".length()));
+        } else if (path.matches("/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}/.*")) {
+            // XXXX-XXXX 格式是 SD 卡
             int dcimIndex = path.indexOf("/DCIM/");
             if (dcimIndex > 0) {
                 displayPath = "SD卡" + path.substring(dcimIndex);
             } else {
-                displayPath = path;
+                displayPath = "SD卡/" + path.substring(path.lastIndexOf("/") + 1);
             }
         } else {
+            // 其他路径原样显示
             displayPath = path;
         }
         
@@ -1029,6 +1105,18 @@ public class SettingsFragment extends Fragment {
         }
         sb.append(hasStoragePermission ? "已授权 ✓\n" : "未授权 ✗\n");
         
+        // 显示当前自定义路径
+        String customPath = appConfig.getCustomSdCardPath();
+        sb.append("\n=== 自定义SD卡路径 ===\n");
+        if (customPath != null) {
+            sb.append("当前设置: " + customPath + "\n");
+            java.io.File customDir = new java.io.File(customPath);
+            sb.append("路径状态: " + (customDir.exists() ? "存在" : "不存在") + 
+                    ", " + (customDir.canWrite() ? "可写" : "不可写") + "\n");
+        } else {
+            sb.append("未设置（使用自动检测）\n");
+        }
+        
         sb.append("\n");
         
         // 然后显示存储设备检测信息
@@ -1048,6 +1136,85 @@ public class SettingsFragment extends Fragment {
                     clipboard.setPrimaryClip(clip);
                     Toast.makeText(getContext(), "已复制到剪贴板", Toast.LENGTH_SHORT).show();
                 })
+                .setNegativeButton("手动设置路径", (dialog, which) -> {
+                    showManualSdCardPathDialog();
+                })
+                .show();
+    }
+    
+    /**
+     * 显示手动设置SD卡路径对话框
+     */
+    private void showManualSdCardPathDialog() {
+        if (getContext() == null) return;
+        
+        android.widget.EditText input = new android.widget.EditText(getContext());
+        input.setHint("例如: /storage/ABCD-1234");
+        input.setSingleLine(true);
+        
+        // 显示当前设置的路径
+        String currentPath = appConfig.getCustomSdCardPath();
+        if (currentPath != null) {
+            input.setText(currentPath);
+        }
+        
+        // 设置边距
+        android.widget.FrameLayout container = new android.widget.FrameLayout(getContext());
+        android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = 48;
+        params.rightMargin = 48;
+        input.setLayoutParams(params);
+        container.addView(input);
+        
+        new android.app.AlertDialog.Builder(getContext())
+                .setTitle("手动设置SD卡路径")
+                .setMessage("如果自动检测失败，你可以手动输入SD卡的挂载路径。\n\n" +
+                        "常见格式：\n" +
+                        "• /storage/XXXX-XXXX（十六进制ID）\n" +
+                        "• /storage/sdcard1\n" +
+                        "• /mnt/sdcard1\n\n" +
+                        "留空表示使用自动检测。")
+                .setView(container)
+                .setPositiveButton("保存", (dialog, which) -> {
+                    String path = input.getText().toString().trim();
+                    if (path.isEmpty()) {
+                        appConfig.setCustomSdCardPath(null);
+                        Toast.makeText(getContext(), "已清除自定义路径，使用自动检测", Toast.LENGTH_SHORT).show();
+                    } else {
+                        java.io.File testDir = new java.io.File(path);
+                        if (!testDir.exists()) {
+                            Toast.makeText(getContext(), "警告：路径不存在，但已保存", Toast.LENGTH_LONG).show();
+                        } else if (!testDir.isDirectory()) {
+                            Toast.makeText(getContext(), "警告：路径不是目录，但已保存", Toast.LENGTH_LONG).show();
+                        } else if (!testDir.canWrite()) {
+                            Toast.makeText(getContext(), "警告：路径不可写，但已保存", Toast.LENGTH_LONG).show();
+                        } else {
+                            Toast.makeText(getContext(), "SD卡路径已设置", Toast.LENGTH_SHORT).show();
+                        }
+                        appConfig.setCustomSdCardPath(path);
+                    }
+                    
+                    // 重新检测并更新UI
+                    hasExternalSdCard = StorageHelper.hasExternalSdCard(getContext());
+                    if (storageDebugButton != null) {
+                        storageDebugButton.setVisibility(hasExternalSdCard ? View.GONE : View.VISIBLE);
+                    }
+                    if (hasExternalSdCard && storageLocationSpinner != null) {
+                        storageLocationOptions = new String[] {"内部存储", "外置SD卡"};
+                        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                                getContext(),
+                                R.layout.spinner_item,
+                                storageLocationOptions
+                        );
+                        adapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+                        storageLocationSpinner.setAdapter(adapter);
+                    }
+                    String currentLocation = appConfig.getStorageLocation();
+                    updateStorageLocationDescription(currentLocation);
+                })
+                .setNegativeButton("取消", null)
                 .show();
     }
     

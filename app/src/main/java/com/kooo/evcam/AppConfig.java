@@ -15,10 +15,12 @@ public class AppConfig {
     private static final String KEY_FIRST_LAUNCH = "first_launch";  // 首次启动标记
     private static final String KEY_AUTO_START_ON_BOOT = "auto_start_on_boot";  // 开机自启动
     private static final String KEY_KEEP_ALIVE_ENABLED = "keep_alive_enabled";  // 保活服务
+    private static final String KEY_PREVENT_SLEEP_ENABLED = "prevent_sleep_enabled";  // 防止休眠（持续WakeLock）
     private static final String KEY_RECORDING_MODE = "recording_mode";  // 录制模式
     
     // 存储位置配置
     private static final String KEY_STORAGE_LOCATION = "storage_location";  // 存储位置
+    private static final String KEY_CUSTOM_SD_CARD_PATH = "custom_sd_card_path";  // 手动设置的SD卡路径
     
     // 存储位置常量
     public static final String STORAGE_INTERNAL = "internal";  // 内部存储（默认）
@@ -147,6 +149,24 @@ public class AppConfig {
     public boolean isKeepAliveEnabled() {
         // 默认启用保活服务
         return prefs.getBoolean(KEY_KEEP_ALIVE_ENABLED, true);
+    }
+    
+    /**
+     * 设置防止休眠（持续WakeLock）
+     * @param enabled true 表示启用防止休眠
+     */
+    public void setPreventSleepEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_PREVENT_SLEEP_ENABLED, enabled).apply();
+        AppLog.d(TAG, "防止休眠设置: " + (enabled ? "启用" : "禁用"));
+    }
+    
+    /**
+     * 获取防止休眠设置
+     * @return true 表示启用防止休眠
+     */
+    public boolean isPreventSleepEnabled() {
+        // 默认禁用防止休眠（因为会增加功耗）
+        return prefs.getBoolean(KEY_PREVENT_SLEEP_ENABLED, false);
     }
     
     /**
@@ -484,6 +504,39 @@ public class AppConfig {
      */
     public boolean isUsingExternalSdCard() {
         return STORAGE_EXTERNAL_SD.equals(getStorageLocation());
+    }
+    
+    /**
+     * 设置自定义SD卡路径
+     * @param path SD卡路径，设为null或空字符串表示使用自动检测
+     */
+    public void setCustomSdCardPath(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            prefs.edit().remove(KEY_CUSTOM_SD_CARD_PATH).apply();
+            AppLog.d(TAG, "清除自定义SD卡路径，使用自动检测");
+        } else {
+            prefs.edit().putString(KEY_CUSTOM_SD_CARD_PATH, path.trim()).apply();
+            AppLog.d(TAG, "设置自定义SD卡路径: " + path.trim());
+        }
+    }
+    
+    /**
+     * 获取自定义SD卡路径
+     * @return 自定义路径，如果未设置返回null
+     */
+    public String getCustomSdCardPath() {
+        String path = prefs.getString(KEY_CUSTOM_SD_CARD_PATH, null);
+        if (path != null && path.trim().isEmpty()) {
+            return null;
+        }
+        return path;
+    }
+    
+    /**
+     * 是否使用自定义SD卡路径
+     */
+    public boolean hasCustomSdCardPath() {
+        return getCustomSdCardPath() != null;
     }
     
     // ==================== 悬浮窗配置相关方法 ====================
