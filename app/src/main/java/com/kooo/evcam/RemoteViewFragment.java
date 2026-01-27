@@ -52,6 +52,18 @@ public class RemoteViewFragment extends Fragment {
         tvConnectionStatus = view.findViewById(R.id.tv_connection_status);
         switchAutoStart = view.findViewById(R.id.switch_auto_start);
         config = new DingTalkConfig(requireContext());
+
+        // 沉浸式状态栏兼容
+        View toolbar = view.findViewById(R.id.toolbar);
+        if (toolbar != null) {
+            final int originalPaddingTop = toolbar.getPaddingTop();
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(toolbar, (v, insets) -> {
+                int statusBarHeight = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars()).top;
+                v.setPadding(v.getPaddingLeft(), statusBarHeight + originalPaddingTop, v.getPaddingRight(), v.getPaddingBottom());
+                return insets;
+            });
+            androidx.core.view.ViewCompat.requestApplyInsets(toolbar);
+        }
     }
 
     private void loadConfig() {
