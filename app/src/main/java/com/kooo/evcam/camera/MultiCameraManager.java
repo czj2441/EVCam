@@ -223,6 +223,7 @@ public class MultiCameraManager {
                 }
 
                 // 检查是否有录制器正在等待会话重新配置（分段切换）
+                // 或者有待启动的录制（初始录制时也采用此方式，每个 Camera 单独启动）
                 for (Map.Entry<String, SingleCamera> entry : cameras.entrySet()) {
                     if (entry.getValue().getCameraId().equals(cameraId)) {
                         String key = entry.getKey();
@@ -232,6 +233,20 @@ public class MultiCameraManager {
                             AppLog.d(TAG, "Camera " + cameraId + " session reconfigured, starting next segment recording");
                             recorder.clearWaitingForSessionReconfiguration();
                             recorder.startRecording();
+                        } else if (recorder != null && recorder.isPrepared() && !recorder.isRecording()) {
+                            // 初始录制：Session 配置完成后立即启动该 Camera 的录制
+                            // 这样可以避免等待所有 Camera 导致的 Surface 状态问题
+                            // 这是模仿分段切换的方式，分段切换时视频能正常保存就是因为采用了这种方式
+                            AppLog.d(TAG, "Camera " + cameraId + " session configured, starting initial recording immediately");
+                            if (recorder.startRecording()) {
+                                AppLog.d(TAG, "Camera " + cameraId + " initial recording started successfully");
+                                // 第一个 Camera 启动成功时就设置录制状态
+                                if (!isRecording) {
+                                    isRecording = true;
+                                    lastNotifiedSegmentIndex = -1;
+                                    AppLog.d(TAG, "Recording state set to true (first camera started)");
+                                }
+                            }
                         }
                         break;
                     }
@@ -254,8 +269,9 @@ public class MultiCameraManager {
                                     sessionTimeoutRunnable = null;
                                 }
                                 pendingRecordingStart = null;
-                                // 在主线程上执行录制启动，确保线程安全
-                                mainHandler.post(recordingTask);
+                                // 延迟 300ms 再启动录制，让 Camera Session 稳定
+                                // 某些车机设备需要这个延迟才能正确将帧发送到 MediaRecorder Surface
+                                mainHandler.postDelayed(recordingTask, 300);
                             }
                             sessionConfiguredCount = 0;
                             expectedSessionCount = 0;
@@ -297,8 +313,8 @@ public class MultiCameraManager {
                                     sessionTimeoutRunnable = null;
                                 }
                                 pendingRecordingStart = null;
-                                // 在主线程上执行录制启动
-                                mainHandler.post(recordingTask);
+                                // 延迟 300ms 再启动录制，让 Camera Session 稳定
+                                mainHandler.postDelayed(recordingTask, 300);
                             }
                             sessionConfiguredCount = 0;
                             expectedSessionCount = 0;
