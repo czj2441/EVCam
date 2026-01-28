@@ -29,6 +29,7 @@ import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
 
 import com.google.android.material.navigation.NavigationView;
+import com.kooo.evcam.camera.ImageAdjustManager;
 import com.kooo.evcam.camera.MultiCameraManager;
 import com.kooo.evcam.camera.SingleCamera;
 import com.kooo.evcam.FileTransferManager;
@@ -73,6 +74,8 @@ public class MainActivity extends AppCompatActivity {
     private AutoFitTextureView textureFront, textureBack, textureLeft, textureRight;
     private Button btnStartRecord, btnExit, btnTakePhoto;
     private MultiCameraManager cameraManager;
+    private ImageAdjustManager imageAdjustManager;  // 亮度/降噪调节管理器
+    private ImageAdjustFloatingWindow imageAdjustFloatingWindow;  // 亮度/降噪调节悬浮窗
     private int textureReadyCount = 0;  // 记录准备好的TextureView数量
     private int requiredTextureCount = 4;  // 需要准备好的TextureView数量（根据摄像头数量）
     private boolean isRecording = false;  // 录制状态标志
@@ -1118,6 +1121,9 @@ public class MainActivity extends AppCompatActivity {
 
         cameraManager = new MultiCameraManager(this);
         cameraManager.setMaxOpenCameras(configuredCameraCount);
+        
+        // 初始化亮度/降噪调节管理器
+        imageAdjustManager = new ImageAdjustManager(this);
 
         // 设置摄像头状态回调
         cameraManager.setStatusCallback((cameraId, status) -> {
@@ -1350,6 +1356,9 @@ public class MainActivity extends AppCompatActivity {
 
                 // 打开所有摄像头
                 cameraManager.openAllCameras();
+                
+                // 注册摄像头到亮度/降噪调节管理器
+                registerCamerasToImageAdjustManager();
 
                 AppLog.d(TAG, "Camera initialized with " + configuredCameraCount + " cameras");
                 //Toast.makeText(this, "已打开 " + configuredCameraCount + " 个摄像头", Toast.LENGTH_SHORT).show();
@@ -3083,5 +3092,139 @@ public class MainActivity extends AppCompatActivity {
             moveTaskToBack(true);
             AppLog.d(TAG, "Moved to background via back button");
         }
-     }
+    }
+    
+    // ==================== 亮度/降噪调节相关方法 ====================
+    
+    /**
+     * 获取亮度/降噪调节管理器
+     * @return ImageAdjustManager 实例
+     */
+    public ImageAdjustManager getImageAdjustManager() {
+        return imageAdjustManager;
+    }
+    
+    /**
+     * 注册摄像头到亮度/降噪调节管理器
+     */
+    private void registerCamerasToImageAdjustManager() {
+        if (imageAdjustManager == null || cameraManager == null) {
+            return;
+        }
+        
+        // 清空之前注册的摄像头
+        imageAdjustManager.clearCameras();
+        
+        // 注册各位置的摄像头
+        String[] positions = {"front", "back", "left", "right"};
+        for (String position : positions) {
+            SingleCamera camera = cameraManager.getCamera(position);
+            if (camera != null) {
+                imageAdjustManager.registerCamera(camera);
+            }
+        }
+        
+        // 如果启用了亮度/降噪调节，设置各摄像头的启用状态
+        boolean enabled = appConfig.isImageAdjustEnabled();
+        if (enabled) {
+            setImageAdjustEnabled(true);
+        }
+        
+        AppLog.d(TAG, "Registered cameras to ImageAdjustManager, adjust enabled: " + enabled);
+    }
+    
+    /**
+     * 设置亮度/降噪调节启用状态
+     * @param enabled true 表示启用
+     */
+    public void setImageAdjustEnabled(boolean enabled) {
+        if (cameraManager == null) {
+            return;
+        }
+        
+        // 设置各摄像头的启用状态
+        String[] positions = {"front", "back", "left", "right"};
+        for (String position : positions) {
+            SingleCamera camera = cameraManager.getCamera(position);
+            if (camera != null) {
+                camera.setImageAdjustEnabled(enabled);
+            }
+        }
+        
+        // 如果启用，立即应用当前配置的参数
+        if (enabled && imageAdjustManager != null) {
+            // 延迟执行，确保摄像头会话已经配置好
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                imageAdjustManager.updateAllCameras();
+            }, 500);
+        }
+        
+        AppLog.d(TAG, "Image adjust enabled: " + enabled);
+    }
+    
+    /**
+     * 显示亮度/降噪调节悬浮窗
+     * 悬浮窗由 MainActivity 管理，这样即使退出设置页面也能保持显示
+     */
+    public void showImageAdjustFloatingWindow() {
+        // 检查悬浮窗权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "需要悬浮窗权限才能打开调节窗口", Toast.LENGTH_SHORT).show();
+            Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:" + getPackageName()));
+            startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION);
+            return;
+        }
+        
+        if (imageAdjustManager == null) {
+            Toast.makeText(this, "摄像头未就绪，无法打开调节窗口", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 关闭之前的悬浮窗（如果有）
+        if (imageAdjustFloatingWindow != null && imageAdjustFloatingWindow.isShowing()) {
+            imageAdjustFloatingWindow.dismiss();
+        }
+        
+        // 创建并显示悬浮窗
+        imageAdjustFloatingWindow = new ImageAdjustFloatingWindow(this, imageAdjustManager);
+        imageAdjustFloatingWindow.setOnDismissListener(() -> {
+            AppLog.d(TAG, "Image adjust floating window dismissed");
+        });
+        imageAdjustFloatingWindow.show();
+        
+        AppLog.d(TAG, "Image adjust floating window shown");
+    }
+    
+    /**
+     * 关闭亮度/降噪调节悬浮窗
+     */
+    public void dismissImageAdjustFloatingWindow() {
+        if (imageAdjustFloatingWindow != null && imageAdjustFloatingWindow.isShowing()) {
+            imageAdjustFloatingWindow.dismiss();
+            imageAdjustFloatingWindow = null;
+        }
+    }
+    
+    /**
+     * 检查亮度/降噪调节悬浮窗是否正在显示
+     */
+    public boolean isImageAdjustFloatingWindowShowing() {
+        return imageAdjustFloatingWindow != null && imageAdjustFloatingWindow.isShowing();
+    }
+    
+    private static final int REQUEST_OVERLAY_PERMISSION = 1001;
+    
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_OVERLAY_PERMISSION) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && android.provider.Settings.canDrawOverlays(this)) {
+                // 权限已授予，打开悬浮窗
+                showImageAdjustFloatingWindow();
+            } else {
+                Toast.makeText(this, "悬浮窗权限未授予", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
 }
