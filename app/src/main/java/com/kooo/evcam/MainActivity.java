@@ -91,6 +91,10 @@ public class MainActivity extends AppCompatActivity {
     // 防双击保护
     private long lastRecordButtonClickTime = 0;  // 上次点击录制按钮的时间
     private static final long RECORD_BUTTON_CLICK_INTERVAL = 1000;  // 最小点击间隔（1秒）
+    
+    // 录制异常提示防抖
+    private long lastRecordingErrorToastTime = 0;  // 上次显示录制异常提示的时间
+    private static final long RECORDING_ERROR_TOAST_INTERVAL = 20000;  // 最小显示间隔（20秒）
     private boolean shouldMoveToBackgroundOnReady = false;  // 开机自启动后，窗口准备好时移到后台
     private boolean autoStartRecordingTriggered = false;  // 标记自动录制是否已触发（避免重复触发）
     
@@ -1253,6 +1257,15 @@ public class MainActivity extends AppCompatActivity {
             });
         });
 
+        // 设置录制时间戳更新回调
+        // 当 Watchdog 触发重建录制时，时间戳会改变，需要更新以便正确查找视频文件
+        cameraManager.setTimestampUpdateCallback(newTimestamp -> {
+            if (isRemoteRecording && remoteRecordingTimestamp != null) {
+                AppLog.d(TAG, "远程录制时间戳更新: " + remoteRecordingTimestamp + " -> " + newTimestamp);
+                remoteRecordingTimestamp = newTimestamp;
+            }
+        });
+
         // 设置首次数据写入回调
         // 用于在摄像头真正开始输出数据后启动计时器（分段计时、钉钉录制计时等）
         cameraManager.setFirstDataWrittenCallback(() -> {
@@ -2167,7 +2180,6 @@ public class MainActivity extends AppCompatActivity {
         
         screenStateHandler.postDelayed(screenOnStartRunnable, SCREEN_ON_DELAY_MS);
     }
-    
     /**
      * 切换录制状态（开始/停止）
      */
@@ -2351,13 +2363,13 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * 显示准备中状态
-     * 按钮变为绿色（不闪烁），表示录制正在初始化
+     * 按钮变为暗绿色（不闪烁），表示录制正在初始化
      */
     private void showPreparingIndicator() {
         if (btnStartRecord != null) {
-            // 设置按钮为绿色（不闪烁），表示准备中
-            btnStartRecord.setTextColor(0xFF00FF00);  // 绿色
-            AppLog.d(TAG, "进入准备中状态：绿色（不闪烁）");
+            // 设置按钮为暗绿色（不闪烁），表示准备中
+            btnStartRecord.setTextColor(0xFF006400);  // 暗绿色
+            AppLog.d(TAG, "进入准备中状态：暗绿色（不闪烁）");
         }
     }
 
@@ -3393,17 +3405,26 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 显示损坏文件已删除的提示（自动消失）
+     * 显示录制异常的提示（自动消失，每20秒最多显示一次）
      */
     private void showCorruptedFilesDeletedDialog(List<String> deletedFiles) {
         if (deletedFiles == null || deletedFiles.isEmpty()) {
             return;
         }
 
+        // 记录日志（始终记录）
+        AppLog.w(TAG, "Recording error, deleted " + deletedFiles.size() + " corrupted files: " + deletedFiles);
+
+        // 检查是否可以显示 Toast（20秒内只显示一次）
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastRecordingErrorToastTime < RECORDING_ERROR_TOAST_INTERVAL) {
+            AppLog.d(TAG, "Recording error toast suppressed (rate limited)");
+            return;
+        }
+        lastRecordingErrorToastTime = currentTime;
+
         runOnUiThread(() -> {
-            String message = "已清理 " + deletedFiles.size() + " 个异常视频文件";
-            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
-            AppLog.w(TAG, "Showed corrupted files toast: " + deletedFiles.size() + " files - " + deletedFiles);
+            android.widget.Toast.makeText(this, "录制发生异常", android.widget.Toast.LENGTH_LONG).show();
         });
     }
 

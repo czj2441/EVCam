@@ -49,6 +49,7 @@ public class MultiCameraManager {
     private Set<String> currentEnabledCameras = null;  // 当前启用的摄像头集合
     private int rebuildAttemptCount = 0;  // 重建尝试次数（0=首次, 1=重建MediaRecorder, 2+=回退Codec）
     private static final int CODEC_FALLBACK_THRESHOLD = 2;  // 触发 Codec 回退的阈值
+    private volatile boolean isRebuildingRecording = false;  // 是否正在重建录制（防止多摄像头并发触发）
     private StatusCallback statusCallback;
     private PreviewSizeCallback previewSizeCallback;
     private volatile int sessionConfiguredCount = 0;
@@ -112,6 +113,18 @@ public class MultiCameraManager {
         void onFirstDataWritten();
     }
 
+    /**
+     * 录制时间戳更新回调
+     * 当 Watchdog 触发重建录制时，时间戳会改变，需要通知外部更新
+     */
+    public interface TimestampUpdateCallback {
+        /**
+         * 当录制时间戳更新时调用（通常在 Watchdog 重建后）
+         * @param newTimestamp 新的录制时间戳
+         */
+        void onTimestampUpdated(String newTimestamp);
+    }
+
     public MultiCameraManager(Context context) {
         this.context = context;
     }
@@ -120,6 +133,7 @@ public class MultiCameraManager {
     private CorruptedFilesCallback corruptedFilesCallback;
     private CodecFallbackCallback codecFallbackCallback;
     private FirstDataWrittenCallback firstDataWrittenCallback;
+    private TimestampUpdateCallback timestampUpdateCallback;
     private boolean hasNotifiedFirstDataWritten = false;  // 是否已通知首次写入（每次录制只通知一次）
 
     public void setStatusCallback(StatusCallback callback) {
@@ -148,6 +162,10 @@ public class MultiCameraManager {
 
     public void setFirstDataWrittenCallback(FirstDataWrittenCallback callback) {
         this.firstDataWrittenCallback = callback;
+    }
+
+    public void setTimestampUpdateCallback(TimestampUpdateCallback callback) {
+        this.timestampUpdateCallback = callback;
     }
 
     public void setMaxOpenCameras(int maxOpenCameras) {
@@ -467,8 +485,8 @@ public class MultiCameraManager {
                                 scheduleRelayTransfer(completedFilePath);
                             }
                             
-                            // 更新录制 Surface 并重新创建会话
-                            camera.setRecordSurface(recorder.getSurface());
+                            // 更新录制 Surface 并重新创建会话（MediaRecorder 模式）
+                            camera.setRecordSurface(recorder.getSurface(), false);
                             camera.recreateSession();
                             AppLog.d(TAG, "Recreated session for camera " + cameraId + " after segment switch");
                         }
@@ -773,7 +791,7 @@ public class MultiCameraManager {
             if (camera == null || recorder == null) {
                 continue;
             }
-            camera.setRecordSurface(recorder.getSurface());
+            camera.setRecordSurface(recorder.getSurface(), false);  // MediaRecorder 模式
             camera.recreateSession();
         }
 
@@ -1073,7 +1091,7 @@ public class MultiCameraManager {
 
             // 将 SurfaceTexture 设置给 Camera（通过 Surface）
             android.view.Surface recordSurface = new android.view.Surface(surfaceTexture);
-            camera.setRecordSurface(recordSurface);
+            camera.setRecordSurface(recordSurface, true);  // Codec 模式
 
             codecRecorders.put(key, codecRecorder);
         }
@@ -1268,6 +1286,7 @@ public class MultiCameraManager {
         currentRecordingTimestamp = null;
         currentEnabledCameras = null;
         rebuildAttemptCount = 0;
+        isRebuildingRecording = false;  // 重置重建标志
         
         AppLog.d(TAG, "All cameras stopped recording");
     }
@@ -1280,10 +1299,22 @@ public class MultiCameraManager {
      * 2. 第二次触发：如果录制模式为"自动"，则切换到 Codec 模式
      * 3. 已在 Codec 模式或非自动模式：不再处理
      * 
+     * 注意：多个摄像头可能同时触发此方法，需要防重入保护
+     * 
      * @param cameraId 触发重建的相机ID
      * @param reason 重建原因
      */
     private void handleRecordingRebuildRequest(String cameraId, String reason) {
+        // 【关键】防重入保护：多个摄像头可能同时触发 Watchdog
+        // 只处理第一个触发的请求，忽略后续的
+        synchronized (this) {
+            if (isRebuildingRecording) {
+                AppLog.w(TAG, "Recording rebuild already in progress, ignoring request from camera " + cameraId);
+                return;
+            }
+            isRebuildingRecording = true;
+        }
+        
         rebuildAttemptCount++;
         AppLog.w(TAG, "Handling recording rebuild request from camera " + cameraId + 
                 ", reason: " + reason + ", attempt: " + rebuildAttemptCount);
@@ -1291,6 +1322,7 @@ public class MultiCameraManager {
         // 如果已经在 Codec 模式，则不再处理
         if (useCodecRecording) {
             AppLog.w(TAG, "Already using Codec recording, no further fallback available");
+            isRebuildingRecording = false;
             return;
         }
         
@@ -1300,11 +1332,15 @@ public class MultiCameraManager {
         
         if (savedTimestamp == null) {
             AppLog.w(TAG, "No recording timestamp saved, cannot rebuild");
+            isRebuildingRecording = false;
             return;
         }
         
         // 停止当前录制（不清理状态）
         stopRecordingForRebuild();
+        
+        // 注意：不自动清除调试标志，让用户通过 UI 手动控制
+        // 调试模式作为持久开关，直到用户手动关闭
         
         // 检查是否需要回退到 Codec
         if (rebuildAttemptCount >= CODEC_FALLBACK_THRESHOLD) {
@@ -1317,16 +1353,25 @@ public class MultiCameraManager {
                 AppLog.w(TAG, "Rebuild attempt " + rebuildAttemptCount + " failed, switching to Codec mode...");
                 
                 mainHandler.postDelayed(() -> {
-                    // 生成新的时间戳（避免文件名冲突）
-                    String newTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-                    
-                    AppLog.d(TAG, "Restarting recording with Codec mode, new timestamp: " + newTimestamp);
-                    useCodecRecording = true;  // 切换到 Codec 模式
-                    startCodecRecording(newTimestamp, savedEnabledCameras);
-                    
-                    // 通知外部发生了 Codec 回退
-                    if (codecFallbackCallback != null) {
-                        codecFallbackCallback.onCodecFallback();
+                    try {
+                        // 生成新的时间戳（避免文件名冲突）
+                        String newTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+                        
+                        AppLog.d(TAG, "Restarting recording with Codec mode, new timestamp: " + newTimestamp);
+                        useCodecRecording = true;  // 切换到 Codec 模式
+                        startCodecRecording(newTimestamp, savedEnabledCameras);
+                        
+                        // 通知外部时间戳已更新（用于远程录制查找文件）
+                        if (timestampUpdateCallback != null) {
+                            timestampUpdateCallback.onTimestampUpdated(newTimestamp);
+                        }
+                        
+                        // 通知外部发生了 Codec 回退
+                        if (codecFallbackCallback != null) {
+                            codecFallbackCallback.onCodecFallback();
+                        }
+                    } finally {
+                        isRebuildingRecording = false;  // 重建完成
                     }
                 }, 500);
             } else {
@@ -1334,9 +1379,18 @@ public class MultiCameraManager {
                 AppLog.w(TAG, "Recording mode is '" + recordingMode + "' (not auto), retrying MediaRecorder...");
                 
                 mainHandler.postDelayed(() -> {
-                    String newTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-                    AppLog.d(TAG, "Retrying MediaRecorder recording, new timestamp: " + newTimestamp);
-                    startMediaRecorderRecording(newTimestamp, savedEnabledCameras);
+                    try {
+                        String newTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+                        AppLog.d(TAG, "Retrying MediaRecorder recording, new timestamp: " + newTimestamp);
+                        startMediaRecorderRecording(newTimestamp, savedEnabledCameras);
+                        
+                        // 通知外部时间戳已更新（用于远程录制查找文件）
+                        if (timestampUpdateCallback != null) {
+                            timestampUpdateCallback.onTimestampUpdated(newTimestamp);
+                        }
+                    } finally {
+                        isRebuildingRecording = false;  // 重建完成
+                    }
                 }, 500);
             }
         } else {
@@ -1344,28 +1398,38 @@ public class MultiCameraManager {
             AppLog.w(TAG, "Rebuild attempt " + rebuildAttemptCount + ", retrying MediaRecorder first...");
             
             mainHandler.postDelayed(() -> {
-                // 生成新的时间戳（避免文件名冲突）
-                String newTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-                
-                AppLog.d(TAG, "Restarting recording with MediaRecorder, new timestamp: " + newTimestamp);
-                startMediaRecorderRecording(newTimestamp, savedEnabledCameras);
+                try {
+                    // 生成新的时间戳（避免文件名冲突）
+                    String newTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+                    
+                    AppLog.d(TAG, "Restarting recording with MediaRecorder, new timestamp: " + newTimestamp);
+                    startMediaRecorderRecording(newTimestamp, savedEnabledCameras);
+                    
+                    // 通知外部时间戳已更新（用于远程录制查找文件）
+                    if (timestampUpdateCallback != null) {
+                        timestampUpdateCallback.onTimestampUpdated(newTimestamp);
+                    }
+                } finally {
+                    isRebuildingRecording = false;  // 重建完成
+                }
             }, 500);
         }
     }
     
     /**
      * 为重建停止录制（不清理 Watchdog 状态）
+     * 使用 reset() 而不是 release()，以便保留 Handler/Thread 供重建时使用
      */
     private void stopRecordingForRebuild() {
         AppLog.d(TAG, "Stopping recording for rebuild...");
         
         List<String> keys = getActiveCameraKeys();
         
-        // 停止 MediaRecorder 录制
+        // 重置 MediaRecorder 录制器（保留 Handler/Thread）
         for (String key : keys) {
             VideoRecorder recorder = recorders.get(key);
             if (recorder != null) {
-                recorder.release();  // 直接释放，不调用 stopRecording
+                recorder.reset();  // 重置而不是释放，保留 Handler/Thread
             }
         }
         
@@ -1558,6 +1622,7 @@ public class MultiCameraManager {
             recorders.clear();
             codecRecorders.clear();
             isRecording = false;
+            isRebuildingRecording = false;
             currentRecordingTimestamp = null;
             currentEnabledCameras = null;
             AppLog.d(TAG, "All resources released");
