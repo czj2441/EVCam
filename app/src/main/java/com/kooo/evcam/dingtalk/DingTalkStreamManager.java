@@ -304,10 +304,9 @@ public class DingTalkStreamManager {
                 String command = parseCommand(content);
                 AppLog.d(TAG, "解析的指令: " + command);
 
-                // 解析录制时长（秒）
-                int durationSeconds = parseRecordDuration(command);
-
+                // 判断是否是录制指令，只有录制指令才解析时长
                 if (command.startsWith("录制") || command.toLowerCase().startsWith("record")) {
+                    int durationSeconds = parseRecordDuration(command);
                     AppLog.d(TAG, "收到录制指令，时长: " + durationSeconds + " 秒");
 
                     // 发送确认消息，并在发送完成后执行录制命令
