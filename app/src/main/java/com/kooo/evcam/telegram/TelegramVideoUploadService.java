@@ -1,23 +1,23 @@
-package com.kooo.evcam.dingtalk;
-
+package com.kooo.evcam.telegram;
 
 import com.kooo.evcam.AppLog;
+import com.kooo.evcam.dingtalk.VideoThumbnailExtractor;
+
 import android.content.Context;
-import android.util.Log;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 视频上传服务
- * 负责将录制的视频上传到钉钉
+ * Telegram 视频上传服务
+ * 负责将录制的视频上传到 Telegram
  */
-public class VideoUploadService {
-    private static final String TAG = "VideoUploadService";
+public class TelegramVideoUploadService {
+    private static final String TAG = "TelegramVideoUpload";
 
     private final Context context;
-    private final DingTalkApiClient apiClient;
+    private final TelegramApiClient apiClient;
 
     public interface UploadCallback {
         void onProgress(String message);
@@ -25,20 +25,18 @@ public class VideoUploadService {
         void onError(String error);
     }
 
-    public VideoUploadService(Context context, DingTalkApiClient apiClient) {
+    public TelegramVideoUploadService(Context context, TelegramApiClient apiClient) {
         this.context = context;
         this.apiClient = apiClient;
     }
 
     /**
-     * 上传视频文件到钉钉
+     * 上传视频文件到 Telegram
      * @param videoFiles 视频文件列表
-     * @param conversationId 钉钉会话 ID
-     * @param conversationType 会话类型（"1"=单聊，"2"=群聊）
-     * @param userId 钉钉用户 ID（用于发送视频消息）
+     * @param chatId Telegram Chat ID
      * @param callback 上传回调
      */
-    public void uploadVideos(List<File> videoFiles, String conversationId, String conversationType, String userId, UploadCallback callback) {
+    public void uploadVideos(List<File> videoFiles, long chatId, UploadCallback callback) {
         new Thread(() -> {
             try {
                 if (videoFiles == null || videoFiles.isEmpty()) {
@@ -47,6 +45,9 @@ public class VideoUploadService {
                 }
 
                 callback.onProgress("开始上传 " + videoFiles.size() + " 个视频文件...");
+
+                // 发送 "正在上传视频" 状态
+                apiClient.sendChatAction(chatId, "upload_video");
 
                 List<String> uploadedFiles = new ArrayList<>();
 
@@ -67,9 +68,8 @@ public class VideoUploadService {
 
                         boolean thumbnailExtracted = VideoThumbnailExtractor.extractThumbnail(videoFile, thumbnailFile);
                         if (!thumbnailExtracted) {
-                            AppLog.w(TAG, "封面提取失败，跳过视频: " + videoFile.getName());
-                            callback.onError("封面提取失败: " + videoFile.getName());
-                            continue;
+                            AppLog.w(TAG, "封面提取失败，将不使用缩略图");
+                            thumbnailFile = null;
                         }
 
                         // 2. 获取视频时长
@@ -78,28 +78,25 @@ public class VideoUploadService {
                             duration = 60; // 默认 60 秒
                         }
 
-                        // 3. 上传视频文件到钉钉
+                        // 3. 发送 "正在上传视频" 状态
+                        apiClient.sendChatAction(chatId, "upload_video");
+
+                        // 4. 直接上传并发送视频（Telegram API 合并了这两步）
                         callback.onProgress("正在上传视频 (" + (i + 1) + "/" + videoFiles.size() + ")...");
-                        String videoMediaId = apiClient.uploadFile(videoFile);
 
-                        // 4. 上传封面图到钉钉
-                        callback.onProgress("正在上传封面 (" + (i + 1) + "/" + videoFiles.size() + ")...");
-                        String picMediaId = apiClient.uploadImage(thumbnailFile);
-
-                        // 5. 发送视频消息
-                        callback.onProgress("正在发送视频消息 (" + (i + 1) + "/" + videoFiles.size() + ")...");
-                        apiClient.sendVideoMessage(conversationId, conversationType, videoMediaId, picMediaId, duration, userId);
+                        String caption = "视频 " + (i + 1) + "/" + videoFiles.size();
+                        apiClient.sendVideo(chatId, videoFile, thumbnailFile, duration, caption);
 
                         uploadedFiles.add(videoFile.getName());
                         AppLog.d(TAG, "视频上传成功: " + videoFile.getName());
 
-                        // 6. 清理临时封面文件
-                        if (thumbnailFile.exists()) {
+                        // 5. 清理临时封面文件
+                        if (thumbnailFile != null && thumbnailFile.exists()) {
                             thumbnailFile.delete();
                         }
 
-                        // 7. 延迟2秒后再上传下一个视频，减少网络和系统压力
-                        if (i < videoFiles.size() - 1) {  // 不是最后一个视频
+                        // 6. 延迟2秒后再上传下一个视频
+                        if (i < videoFiles.size() - 1) {
                             callback.onProgress("等待2秒后上传下一个视频...");
                             Thread.sleep(2000);
                         }
@@ -113,17 +110,16 @@ public class VideoUploadService {
                 if (uploadedFiles.isEmpty()) {
                     callback.onError("所有视频上传失败");
                 } else {
-                    String successMessage = "视频上传完成！共上传 " + uploadedFiles.size() + " 个文件";
+                    String successMessage = "✅ 视频上传完成！共上传 " + uploadedFiles.size() + " 个文件";
                     callback.onSuccess(successMessage);
 
-                    // 等待5秒，确保视频消息被钉钉服务器处理完毕后再发送完成消息
-                    // 视频处理比图片更慢，需要更长的等待时间
+                    // 等待3秒，确保视频消息投递完成后再发送完成消息
                     try {
-                        Thread.sleep(5000);
+                        Thread.sleep(3000);
                     } catch (InterruptedException ignored) {}
 
-                    // 发送完成消息，传递 conversationType 和 userId
-                    apiClient.sendTextMessage(conversationId, conversationType, successMessage, userId);
+                    // 发送完成消息
+                    apiClient.sendMessage(chatId, successMessage);
                 }
 
             } catch (Exception e) {
@@ -136,9 +132,9 @@ public class VideoUploadService {
     /**
      * 上传单个视频文件
      */
-    public void uploadVideo(File videoFile, String conversationId, String conversationType, String userId, UploadCallback callback) {
+    public void uploadVideo(File videoFile, long chatId, UploadCallback callback) {
         List<File> files = new ArrayList<>();
         files.add(videoFile);
-        uploadVideos(files, conversationId, conversationType, userId, callback);
+        uploadVideos(files, chatId, callback);
     }
 }
