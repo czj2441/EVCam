@@ -748,10 +748,8 @@ public class SettingsFragment extends Fragment {
                                 int selectedIndex = AppConfig.STORAGE_EXTERNAL_SD.equals(currentLocation) ? 1 : 0;
                                 storageLocationSpinner.setSelection(selectedIndex);
                                 storageLocationSpinner.post(() -> isInitializingStorageLocation = false);
-                                
-                                if (hasExternalSdCard) {
-                                    Toast.makeText(getContext(), "检测到U盘", Toast.LENGTH_SHORT).show();
-                                }
+                                // 注意：这里不弹 Toast，因为 onResume 不代表 U 盘刚插入
+                                // 只是界面切换后重新检测状态，避免每次打开设置都提示"检测到U盘"
                             }
                         }
                         

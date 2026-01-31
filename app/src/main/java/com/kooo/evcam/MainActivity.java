@@ -1372,6 +1372,49 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         });
         
         AppLog.d(TAG, "RemoteCommandDispatcher 初始化完成");
+        
+        // 从 RemoteServiceManager 同步已运行服务的 API 客户端
+        // 这确保 Activity 重建后，远程命令处理器能正确使用已有的 API 客户端
+        syncApiClientsFromRemoteServiceManager();
+    }
+    
+    /**
+     * 从 RemoteServiceManager 同步已运行服务的 API 客户端
+     * 在 Activity 重建时，远程服务可能已在运行，需要同步到新的 remoteCommandDispatcher
+     */
+    private void syncApiClientsFromRemoteServiceManager() {
+        if (remoteCommandDispatcher == null) {
+            return;
+        }
+        
+        RemoteServiceManager serviceManager = RemoteServiceManager.getInstance();
+        
+        // 同步钉钉 API 客户端
+        DingTalkApiClient dingTalk = serviceManager.getDingTalkApiClient();
+        if (dingTalk != null) {
+            remoteCommandDispatcher.setDingTalkApiClient(dingTalk);
+            this.dingTalkApiClient = dingTalk;  // 同时更新本地引用
+            this.dingTalkStreamManager = serviceManager.getDingTalkStreamManager();
+            AppLog.d(TAG, "从 RemoteServiceManager 同步钉钉 API 客户端");
+        }
+        
+        // 同步 Telegram API 客户端
+        com.kooo.evcam.telegram.TelegramApiClient telegram = serviceManager.getTelegramApiClient();
+        if (telegram != null) {
+            remoteCommandDispatcher.setTelegramApiClient(telegram);
+            this.telegramApiClient = telegram;
+            this.telegramBotManager = serviceManager.getTelegramBotManager();
+            AppLog.d(TAG, "从 RemoteServiceManager 同步 Telegram API 客户端");
+        }
+        
+        // 同步飞书 API 客户端
+        com.kooo.evcam.feishu.FeishuApiClient feishu = serviceManager.getFeishuApiClient();
+        if (feishu != null) {
+            remoteCommandDispatcher.setFeishuApiClient(feishu);
+            this.feishuApiClient = feishu;
+            this.feishuBotManager = serviceManager.getFeishuBotManager();
+            AppLog.d(TAG, "从 RemoteServiceManager 同步飞书 API 客户端");
+        }
     }
     
     /**
@@ -1810,6 +1853,13 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
     private void executeWechatCommand(String action, String commandId, int durationSeconds) {
         if (wechatRemoteManager != null) {
             wechatRemoteManager.setCommandExecutor(this);
+            
+            // 确保微信云服务已启动（Activity 重建后可能未启动）
+            if (!wechatRemoteManager.isRunning() && wechatMiniConfig != null && wechatMiniConfig.isCloudConfigured()) {
+                AppLog.d(TAG, "微信云服务未运行，尝试启动...");
+                wechatRemoteManager.startService();
+            }
+            
             wechatRemoteManager.executeCommandFromIntent(action, commandId, durationSeconds);
         }
     }
