@@ -2,38 +2,40 @@ package com.kooo.evcam.feishu;
 
 import com.kooo.evcam.AppLog;
 import com.kooo.evcam.WakeUpHelper;
+import com.kooo.evcam.feishu.pb.Pbbp2Frame;
 
 import android.content.Context;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-
-import com.lark.oapi.Client;
-import com.lark.oapi.core.utils.Jsons;
-import com.lark.oapi.event.EventDispatcher;
-import com.lark.oapi.service.im.ImService;
-import com.lark.oapi.service.im.v1.enums.MsgTypeEnum;
-import com.lark.oapi.service.im.v1.enums.ReceiveIdTypeEnum;
-import com.lark.oapi.service.im.v1.model.CreateMessageReq;
-import com.lark.oapi.service.im.v1.model.CreateMessageReqBody;
-import com.lark.oapi.service.im.v1.model.CreateMessageResp;
-import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
-import com.lark.oapi.service.im.v1.model.ReplyMessageReq;
-import com.lark.oapi.service.im.v1.model.ReplyMessageReqBody;
-import com.lark.oapi.service.im.v1.model.ReplyMessageResp;
-
-import java.util.Map;
-import java.util.HashMap;
 import com.google.gson.reflect.TypeToken;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
+import okio.ByteString;
+
 /**
- * 飞书 Bot 管理器
- * 使用飞书官方 SDK 通过 WebSocket 长连接接收消息
+ * 飞书 Bot 管理器（轻量级实现）
+ * 使用 OkHttp WebSocket + 轻量级 Protobuf 实现，不依赖官方 SDK
  */
 public class FeishuBotManager {
     private static final String TAG = "FeishuBotManager";
+    private static final int PING_INTERVAL_MS = 120000; // 2分钟发送一次 ping
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private static final long RECONNECT_DELAY_MS = 5000; // 5秒
 
     private final Context context;
     private final FeishuConfig config;
@@ -42,10 +44,23 @@ public class FeishuBotManager {
     private final Handler mainHandler;
     private final Gson gson;
 
-    private Client larkClient;
-    private com.lark.oapi.ws.Client wsClient;
+    private OkHttpClient wsClient;
+    private WebSocket webSocket;
     private volatile boolean isRunning = false;
+    private volatile boolean shouldStop = false;
+    private int reconnectAttempts = 0;
     private CommandCallback currentCommandCallback;
+
+    // WebSocket 连接信息
+    private int serviceId = 0;
+    private String connId = "";
+
+    // 消息分包缓存
+    private final ConcurrentHashMap<String, byte[][]> messageCache = new ConcurrentHashMap<>();
+
+    // 心跳定时器
+    private Handler pingHandler;
+    private Runnable pingRunnable;
 
     public interface ConnectionCallback {
         void onConnected();
@@ -70,6 +85,7 @@ public class FeishuBotManager {
         this.connectionCallback = callback;
         this.mainHandler = new Handler(Looper.getMainLooper());
         this.gson = new Gson();
+        this.pingHandler = new Handler(Looper.getMainLooper());
     }
 
     /**
@@ -82,6 +98,8 @@ public class FeishuBotManager {
         }
 
         this.currentCommandCallback = commandCallback;
+        this.shouldStop = false;
+        this.reconnectAttempts = 0;
 
         String appId = config.getAppId();
         String appSecret = config.getAppSecret();
@@ -92,65 +110,300 @@ public class FeishuBotManager {
             return;
         }
 
-        AppLog.d(TAG, "正在初始化飞书 SDK...");
+        AppLog.d(TAG, "正在初始化飞书 WebSocket 连接...");
+        startConnection();
+    }
 
-        // 在后台线程中初始化和启动，避免阻塞主线程
+    /**
+     * 内部方法：启动连接
+     */
+    private void startConnection() {
         new Thread(() -> {
             try {
-                // 创建 LarkClient 用于调用 API
-                larkClient = new Client.Builder(appId, appSecret).build();
+                // 1. 获取 WebSocket 连接信息
+                AppLog.d(TAG, "正在获取 WebSocket 连接地址...");
+                FeishuApiClient.WebSocketConnection wsInfo = apiClient.getWebSocketConnection();
+                String wsUrl = wsInfo.url;
+                AppLog.d(TAG, "WebSocket URL: " + wsUrl);
 
-                // 注册事件处理器
-                EventDispatcher eventHandler = EventDispatcher.newBuilder("", "")
-                        .onP2MessageReceiveV1(new ImService.P2MessageReceiveV1Handler() {
-                            @Override
-                            public void handle(P2MessageReceiveV1 event) throws Exception {
-                                processMessageEvent(event);
-                            }
-                        })
+                // 2. 从 URL 中解析 service_id 和 device_id
+                parseUrlParams(wsUrl);
+
+                // 3. 创建 OkHttp WebSocket 客户端
+                wsClient = new OkHttpClient.Builder()
+                        .connectTimeout(30, TimeUnit.SECONDS)
+                        .readTimeout(0, TimeUnit.SECONDS) // 无超时，保持长连接
+                        .writeTimeout(30, TimeUnit.SECONDS)
                         .build();
 
-                // 创建 WebSocket 客户端并启动
-                wsClient = new com.lark.oapi.ws.Client.Builder(appId, appSecret)
-                        .eventHandler(eventHandler)
+                // 4. 建立 WebSocket 连接
+                Request request = new Request.Builder()
+                        .url(wsUrl)
                         .build();
 
-                // 启动 WebSocket 客户端
-                AppLog.d(TAG, "启动 WebSocket 连接...");
-                AppLog.d(TAG, "App ID: " + appId.substring(0, Math.min(8, appId.length())) + "...");
-                
-                wsClient.start();
-                // start() 成功调用后，SDK 会在后台维护连接
-                isRunning = true;
-                AppLog.d(TAG, "飞书 SDK 已启动，连接在后台运行");
-                mainHandler.post(() -> connectionCallback.onConnected());
+                webSocket = wsClient.newWebSocket(request, new FeishuWebSocketListener());
+                AppLog.d(TAG, "WebSocket 连接请求已发送");
 
             } catch (Exception e) {
-                isRunning = false;
-                AppLog.e(TAG, "初始化或启动失败: " + e.getMessage(), e);
-                mainHandler.post(() -> connectionCallback.onError("启动失败: " + e.getMessage()));
+                AppLog.e(TAG, "启动 WebSocket 连接失败", e);
+                handleConnectionError(e.getMessage());
             }
         }).start();
     }
 
     /**
-     * 处理消息事件
+     * 从 WebSocket URL 中解析参数
      */
-    private void processMessageEvent(P2MessageReceiveV1 event) {
+    private void parseUrlParams(String wsUrl) {
         try {
-            AppLog.d(TAG, "收到消息事件: " + Jsons.DEFAULT.toJson(event.getEvent()));
+            // 将 wss:// 替换为 https:// 以便使用 Uri 解析
+            String httpUrl = wsUrl.replace("wss://", "https://").replace("ws://", "http://");
+            Uri uri = Uri.parse(httpUrl);
 
-            // 获取消息信息
-            String messageType = event.getEvent().getMessage().getMessageType();
-            String chatId = event.getEvent().getMessage().getChatId();
-            String messageId = event.getEvent().getMessage().getMessageId();
-            String chatType = event.getEvent().getMessage().getChatType();
+            String serviceIdStr = uri.getQueryParameter("service_id");
+            if (serviceIdStr != null) {
+                serviceId = Integer.parseInt(serviceIdStr);
+            }
+
+            connId = uri.getQueryParameter("device_id");
+            if (connId == null) {
+                connId = "";
+            }
+
+            AppLog.d(TAG, "解析 URL 参数: serviceId=" + serviceId + ", connId=" + connId);
+        } catch (Exception e) {
+            AppLog.e(TAG, "解析 URL 参数失败", e);
+        }
+    }
+
+    /**
+     * WebSocket 监听器
+     */
+    private class FeishuWebSocketListener extends WebSocketListener {
+        @Override
+        public void onOpen(WebSocket webSocket, Response response) {
+            AppLog.d(TAG, "WebSocket 连接已建立");
+            isRunning = true;
+            reconnectAttempts = 0;
+
+            // 启动心跳定时器
+            startPingTimer();
+
+            mainHandler.post(() -> connectionCallback.onConnected());
+        }
+
+        @Override
+        public void onMessage(WebSocket webSocket, String text) {
+            // 飞书使用二进制 Protobuf 消息，文本消息可能是握手或错误
+            AppLog.d(TAG, "收到文本消息: " + text);
+        }
+
+        @Override
+        public void onMessage(WebSocket webSocket, ByteString bytes) {
+            // 处理二进制 Protobuf 消息
+            AppLog.d(TAG, "收到二进制消息: " + bytes.size() + " 字节");
+            processProtobufMessage(bytes.toByteArray());
+        }
+
+        @Override
+        public void onClosing(WebSocket webSocket, int code, String reason) {
+            AppLog.d(TAG, "WebSocket 正在关闭: code=" + code + ", reason=" + reason);
+        }
+
+        @Override
+        public void onClosed(WebSocket webSocket, int code, String reason) {
+            AppLog.d(TAG, "WebSocket 已关闭: code=" + code + ", reason=" + reason);
+            isRunning = false;
+            stopPingTimer();
+
+            if (!shouldStop) {
+                // 非主动关闭，尝试重连
+                attemptReconnect();
+            } else {
+                mainHandler.post(() -> connectionCallback.onDisconnected());
+            }
+        }
+
+        @Override
+        public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+            AppLog.e(TAG, "WebSocket 连接失败", t);
+            isRunning = false;
+            stopPingTimer();
+            handleConnectionError(t.getMessage());
+        }
+    }
+
+    /**
+     * 处理 Protobuf 消息
+     */
+    private void processProtobufMessage(byte[] data) {
+        try {
+            Pbbp2Frame frame = Pbbp2Frame.parseFrom(data);
+            AppLog.d(TAG, "解析帧: " + frame.toString());
+
+            if (frame.isControlFrame()) {
+                handleControlFrame(frame);
+            } else if (frame.isDataFrame()) {
+                handleDataFrame(frame, data);
+            }
+        } catch (Exception e) {
+            AppLog.e(TAG, "处理 Protobuf 消息失败", e);
+        }
+    }
+
+    /**
+     * 处理控制帧
+     */
+    private void handleControlFrame(Pbbp2Frame frame) {
+        String type = frame.getMessageType();
+
+        if (Pbbp2Frame.TYPE_PING.equals(type)) {
+            AppLog.d(TAG, "收到服务器 ping");
+            return;
+        }
+
+        if (Pbbp2Frame.TYPE_PONG.equals(type)) {
+            AppLog.d(TAG, "收到心跳响应 pong");
+            // 可以从 payload 中获取配置更新
+            return;
+        }
+    }
+
+    /**
+     * 处理数据帧
+     */
+    private void handleDataFrame(Pbbp2Frame frame, byte[] rawData) {
+        try {
+            String msgId = frame.getHeaderValue(Pbbp2Frame.HEADER_MESSAGE_ID);
+            String traceId = frame.getHeaderValue(Pbbp2Frame.HEADER_TRACE_ID);
+            String sumStr = frame.getHeaderValue(Pbbp2Frame.HEADER_SUM);
+            String seqStr = frame.getHeaderValue(Pbbp2Frame.HEADER_SEQ);
+            String type = frame.getMessageType();
+
+            int sum = sumStr != null ? Integer.parseInt(sumStr) : 1;
+            int seq = seqStr != null ? Integer.parseInt(seqStr) : 0;
+
+            byte[] payload = frame.getPayload();
+
+            // 处理分包消息
+            if (sum > 1) {
+                payload = combinePackets(msgId, sum, seq, payload);
+                if (payload == null) {
+                    // 还有包未到达
+                    return;
+                }
+            }
+
+            AppLog.d(TAG, "数据帧类型: " + type + ", msgId: " + msgId + ", traceId: " + traceId);
+
+            // 处理事件消息
+            if (Pbbp2Frame.TYPE_EVENT.equals(type)) {
+                String payloadStr = new String(payload, StandardCharsets.UTF_8);
+                AppLog.d(TAG, "事件 payload: " + payloadStr);
+
+                long startTime = System.currentTimeMillis();
+                processEventPayload(payloadStr);
+                long bizRt = System.currentTimeMillis() - startTime;
+
+                // 发送响应
+                sendEventResponse(frame, bizRt);
+            }
+        } catch (Exception e) {
+            AppLog.e(TAG, "处理数据帧失败", e);
+        }
+    }
+
+    /**
+     * 合并分包消息
+     */
+    private byte[] combinePackets(String msgId, int sum, int seq, byte[] data) {
+        byte[][] packets = messageCache.get(msgId);
+        if (packets == null) {
+            packets = new byte[sum][];
+            messageCache.put(msgId, packets);
+        }
+
+        packets[seq] = data;
+
+        // 检查是否所有包都已到达
+        ByteArrayOutputStream combined = new ByteArrayOutputStream();
+        for (byte[] packet : packets) {
+            if (packet == null) {
+                return null; // 还有包未到达
+            }
+            try {
+                combined.write(packet);
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 清除缓存
+        messageCache.remove(msgId);
+        return combined.toByteArray();
+    }
+
+    /**
+     * 发送事件响应
+     */
+    private void sendEventResponse(Pbbp2Frame requestFrame, long bizRt) {
+        try {
+            // 构建响应 JSON
+            JsonObject response = new JsonObject();
+            response.addProperty("code", 200);
+            byte[] responsePayload = gson.toJson(response).getBytes(StandardCharsets.UTF_8);
+
+            // 复制请求帧并设置响应 payload
+            Pbbp2Frame responseFrame = requestFrame.copyWithPayload(responsePayload);
+            responseFrame.addHeader(Pbbp2Frame.HEADER_BIZ_RT, String.valueOf(bizRt));
+
+            byte[] frameBytes = responseFrame.toByteArray();
+            webSocket.send(ByteString.of(frameBytes));
+            AppLog.d(TAG, "已发送事件响应");
+        } catch (Exception e) {
+            AppLog.e(TAG, "发送事件响应失败", e);
+        }
+    }
+
+    /**
+     * 处理事件 payload
+     */
+    private void processEventPayload(String payloadStr) {
+        try {
+            JsonObject payload = gson.fromJson(payloadStr, JsonObject.class);
+
+            // 检查是否有 header 和 event
+            if (!payload.has("header") || !payload.has("event")) {
+                AppLog.d(TAG, "非事件消息格式");
+                return;
+            }
+
+            JsonObject header = payload.getAsJsonObject("header");
+            JsonObject event = payload.getAsJsonObject("event");
+
+            String eventType = header.has("event_type") ? header.get("event_type").getAsString() : "";
+            AppLog.d(TAG, "事件类型: " + eventType);
+
+            // 只处理消息接收事件
+            if (!"im.message.receive_v1".equals(eventType)) {
+                AppLog.d(TAG, "非消息事件，忽略: " + eventType);
+                return;
+            }
+
+            // 解析消息
+            JsonObject messageObj = event.getAsJsonObject("message");
+            String messageType = messageObj.has("message_type") ? messageObj.get("message_type").getAsString() : "";
+            String chatId = messageObj.has("chat_id") ? messageObj.get("chat_id").getAsString() : "";
+            String messageId = messageObj.has("message_id") ? messageObj.get("message_id").getAsString() : "";
+            String chatType = messageObj.has("chat_type") ? messageObj.get("chat_type").getAsString() : "";
 
             // 获取发送者信息
             String senderId = "";
-            if (event.getEvent().getSender() != null && 
-                event.getEvent().getSender().getSenderId() != null) {
-                senderId = event.getEvent().getSender().getSenderId().getOpenId();
+            if (event.has("sender")) {
+                JsonObject sender = event.getAsJsonObject("sender");
+                if (sender.has("sender_id")) {
+                    JsonObject senderIdObj = sender.getAsJsonObject("sender_id");
+                    senderId = senderIdObj.has("open_id") ? senderIdObj.get("open_id").getAsString() : "";
+                }
             }
 
             AppLog.d(TAG, "消息类型: " + messageType + ", chatId: " + chatId + ", senderId: " + senderId);
@@ -168,10 +421,10 @@ public class FeishuBotManager {
             }
 
             // 解析消息内容
-            String content = event.getEvent().getMessage().getContent();
+            String content = messageObj.has("content") ? messageObj.get("content").getAsString() : "";
             Map<String, String> contentMap = new HashMap<>();
             try {
-                contentMap = new Gson().fromJson(content, new TypeToken<Map<String, String>>() {}.getType());
+                contentMap = gson.fromJson(content, new TypeToken<Map<String, String>>() {}.getType());
             } catch (Exception e) {
                 AppLog.e(TAG, "解析消息内容失败", e);
                 return;
@@ -189,7 +442,7 @@ public class FeishuBotManager {
             handleCommand(chatId, messageId, chatType, text);
 
         } catch (Exception e) {
-            AppLog.e(TAG, "处理消息事件失败", e);
+            AppLog.e(TAG, "处理事件 payload 失败", e);
         }
     }
 
@@ -308,93 +561,23 @@ public class FeishuBotManager {
     }
 
     /**
-     * 构建文本消息的 content JSON 字符串
-     * 飞书 API 要求 content 必须是 JSON 序列化后的字符串，如 "{\"text\":\"Hello\"}"
-     */
-    private String buildTextContent(String text) {
-        JsonObject content = new JsonObject();
-        content.addProperty("text", text);
-        return gson.toJson(content);
-    }
-
-    /**
      * 发送回复消息
      */
     private void sendReply(String chatId, String messageId, String chatType, String text) {
         new Thread(() -> {
             try {
-                // 优先使用 SDK 客户端，如果不可用则使用 HTTP API
-                if (larkClient != null) {
-                    sendReplyViaSdk(chatId, messageId, chatType, text);
+                if ("p2p".equals(chatType)) {
+                    // 私聊：使用 create 发送
+                    apiClient.sendTextMessage("chat_id", chatId, text);
                 } else {
-                    // SDK 客户端不可用，使用 HTTP API 发送
-                    AppLog.w(TAG, "SDK 客户端不可用，使用 HTTP API 发送消息");
-                    sendReplyViaHttp(chatId, messageId, chatType, text);
+                    // 群聊：使用 reply 回复
+                    apiClient.replyMessage(messageId, text);
                 }
+                AppLog.d(TAG, "消息发送成功");
             } catch (Exception e) {
                 AppLog.e(TAG, "发送消息失败", e);
             }
         }).start();
-    }
-
-    /**
-     * 通过 SDK 发送消息
-     */
-    private void sendReplyViaSdk(String chatId, String messageId, String chatType, String text) throws Exception {
-        String replyContent = buildTextContent(text);
-        AppLog.d(TAG, "通过 SDK 发送消息 content: " + replyContent);
-
-        if ("p2p".equals(chatType)) {
-            // 私聊：使用 create 发送
-            CreateMessageReq req = CreateMessageReq.newBuilder()
-                    .receiveIdType(ReceiveIdTypeEnum.CHAT_ID.getValue())
-                    .createMessageReqBody(CreateMessageReqBody.newBuilder()
-                            .receiveId(chatId)
-                            .msgType(MsgTypeEnum.MSG_TYPE_TEXT.getValue())
-                            .content(replyContent)
-                            .build())
-                    .build();
-
-            CreateMessageResp resp = larkClient.im().message().create(req);
-            if (resp.getCode() != 0) {
-                AppLog.e(TAG, "发送消息失败: " + Jsons.DEFAULT.toJson(resp.getError()));
-            } else {
-                AppLog.d(TAG, "消息发送成功");
-            }
-        } else {
-            // 群聊：使用 reply 回复
-            ReplyMessageReq req = ReplyMessageReq.newBuilder()
-                    .messageId(messageId)
-                    .replyMessageReqBody(ReplyMessageReqBody.newBuilder()
-                            .content(replyContent)
-                            .msgType("text")
-                            .build())
-                    .build();
-
-            ReplyMessageResp resp = larkClient.im().message().reply(req);
-            if (resp.getCode() != 0) {
-                AppLog.e(TAG, "回复消息失败: " + Jsons.DEFAULT.toJson(resp.getError()));
-            } else {
-                AppLog.d(TAG, "回复消息成功");
-            }
-        }
-    }
-
-    /**
-     * 通过 HTTP API 发送消息（备选方案）
-     */
-    private void sendReplyViaHttp(String chatId, String messageId, String chatType, String text) {
-        try {
-            if ("p2p".equals(chatType)) {
-                apiClient.sendTextMessage("chat_id", chatId, text);
-                AppLog.d(TAG, "HTTP API 消息发送成功");
-            } else {
-                apiClient.replyMessage(messageId, text);
-                AppLog.d(TAG, "HTTP API 回复消息成功");
-            }
-        } catch (Exception e) {
-            AppLog.e(TAG, "HTTP API 发送消息失败", e);
-        }
     }
 
     /**
@@ -403,14 +586,11 @@ public class FeishuBotManager {
     private void sendReplyAndThen(String chatId, String messageId, String chatType, String text, Runnable callback) {
         new Thread(() -> {
             try {
-                // 优先使用 SDK 客户端，如果不可用则使用 HTTP API
-                if (larkClient != null) {
-                    sendReplyViaSdk(chatId, messageId, chatType, text);
+                if ("p2p".equals(chatType)) {
+                    apiClient.sendTextMessage("chat_id", chatId, text);
                 } else {
-                    AppLog.w(TAG, "SDK 客户端不可用，使用 HTTP API 发送消息");
-                    sendReplyViaHttp(chatId, messageId, chatType, text);
+                    apiClient.replyMessage(messageId, text);
                 }
-
                 AppLog.d(TAG, "回复消息已发送");
 
                 if (callback != null) {
@@ -426,10 +606,73 @@ public class FeishuBotManager {
     }
 
     /**
-     * 获取 LarkClient（供上传服务使用）
+     * 启动心跳定时器
      */
-    public Client getLarkClient() {
-        return larkClient;
+    private void startPingTimer() {
+        pingRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isRunning && webSocket != null) {
+                    try {
+                        // 发送 Protobuf 格式的 ping 帧
+                        Pbbp2Frame pingFrame = Pbbp2Frame.createPingFrame(serviceId);
+                        byte[] frameBytes = pingFrame.toByteArray();
+                        webSocket.send(ByteString.of(frameBytes));
+                        AppLog.d(TAG, "发送心跳 ping");
+                    } catch (Exception e) {
+                        AppLog.e(TAG, "发送心跳失败", e);
+                    }
+
+                    // 继续下一次心跳
+                    pingHandler.postDelayed(this, PING_INTERVAL_MS);
+                }
+            }
+        };
+        pingHandler.postDelayed(pingRunnable, PING_INTERVAL_MS);
+    }
+
+    /**
+     * 停止心跳定时器
+     */
+    private void stopPingTimer() {
+        if (pingRunnable != null) {
+            pingHandler.removeCallbacks(pingRunnable);
+        }
+    }
+
+    /**
+     * 处理连接错误
+     */
+    private void handleConnectionError(String errorMsg) {
+        if (!shouldStop && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            AppLog.d(TAG, "将在 " + RECONNECT_DELAY_MS + "ms 后尝试第 " + reconnectAttempts + " 次重连");
+            mainHandler.postDelayed(() -> {
+                if (!shouldStop) {
+                    startConnection();
+                }
+            }, RECONNECT_DELAY_MS);
+        } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            AppLog.w(TAG, "达到最大重连次数（" + MAX_RECONNECT_ATTEMPTS + "），连接失败");
+            mainHandler.post(() -> connectionCallback.onError("连接失败: " + errorMsg));
+        }
+    }
+
+    /**
+     * 尝试重连
+     */
+    private void attemptReconnect() {
+        if (!shouldStop && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            AppLog.d(TAG, "连接断开，将在 " + RECONNECT_DELAY_MS + "ms 后尝试第 " + reconnectAttempts + " 次重连");
+            mainHandler.postDelayed(() -> {
+                if (!shouldStop) {
+                    startConnection();
+                }
+            }, RECONNECT_DELAY_MS);
+        } else {
+            mainHandler.post(() -> connectionCallback.onDisconnected());
+        }
     }
 
     /**
@@ -437,19 +680,24 @@ public class FeishuBotManager {
      */
     public void stop() {
         AppLog.d(TAG, "正在停止 Bot...");
+        shouldStop = true;
+        isRunning = false;
+
+        stopPingTimer();
+
+        if (webSocket != null) {
+            webSocket.close(1000, "Normal closure");
+            webSocket = null;
+        }
 
         if (wsClient != null) {
-            try {
-                // SDK 没有提供 stop 方法，设置标志位让线程退出
-                // wsClient 的 start() 是阻塞的，需要通过其他方式中断
-            } catch (Exception e) {
-                AppLog.e(TAG, "停止 wsClient 失败", e);
-            }
+            wsClient.dispatcher().executorService().shutdown();
             wsClient = null;
         }
 
-        larkClient = null;
-        isRunning = false;
+        // 清除消息缓存
+        messageCache.clear();
+
         AppLog.d(TAG, "Bot 已停止");
     }
 

@@ -102,18 +102,28 @@ public class FeishuApiClient {
     /**
      * 获取 WebSocket 连接信息（用于长连接接收消息）
      * 注意：需要在飞书开发者后台开启"长连接"模式
+     * 
+     * 根据飞书官方 SDK 实现，此接口需要直接传递 AppID 和 AppSecret，
+     * 而不是使用 Bearer Token 认证。
      */
     public WebSocketConnection getWebSocketConnection() throws IOException {
-        String accessToken = getTenantAccessToken();
-        String url = BASE_URL + "/callback/ws/endpoint";
+        // 注意：WebSocket endpoint 不使用 /open-apis 前缀
+        // 正确的 URL 是 https://open.feishu.cn/callback/ws/endpoint
+        String url = "https://open.feishu.cn/callback/ws/endpoint";
 
-        // 飞书要求使用 POST 方法，请求体为空 JSON
+        // 飞书官方 SDK 使用的请求格式：直接传递 AppID 和 AppSecret
+        JsonObject body = new JsonObject();
+        body.addProperty("AppID", config.getAppId());
+        body.addProperty("AppSecret", config.getAppSecret());
+
+        AppLog.d(TAG, "正在获取 WebSocket 连接地址...");
+
         Request request = new Request.Builder()
                 .url(url)
-                .header("Authorization", "Bearer " + accessToken)
+                .header("locale", "zh")
                 .post(RequestBody.create(
-                        MediaType.parse("application/json"),
-                        "{}"
+                        MediaType.parse("application/json; charset=utf-8"),
+                        gson.toJson(body)
                 ))
                 .build();
 
@@ -134,7 +144,8 @@ public class FeishuApiClient {
             }
 
             JsonObject data = jsonResponse.getAsJsonObject("data");
-            String wsUrl = data.get("url").getAsString();
+            // 注意：飞书返回的字段名是大写 "URL"
+            String wsUrl = data.get("URL").getAsString();
 
             AppLog.d(TAG, "WebSocket URL 获取成功: " + wsUrl);
             return new WebSocketConnection(wsUrl);

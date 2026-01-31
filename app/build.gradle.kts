@@ -21,7 +21,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 12
-        versionName = "0.9.9-test-01311319"
+        versionName = "0.9.9-test-01311411"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -42,22 +42,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    // 排除重复的 META-INF 文件（飞书 SDK 依赖的 Apache HttpClient 冲突）
-    packaging {
-        resources {
-            excludes += setOf(
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE",
-                "META-INF/LICENSE.txt",
-                "META-INF/license.txt",
-                "META-INF/NOTICE",
-                "META-INF/NOTICE.txt",
-                "META-INF/notice.txt",
-                "META-INF/ASL2.0",
-                "META-INF/*.kotlin_module"
-            )
-        }
-    }
 }
 
 dependencies {
@@ -71,8 +55,7 @@ dependencies {
     // 閽夐拤瀹樻柟 Stream SDK
     implementation("com.dingtalk.open:app-stream-client:1.3.12")
 
-    // 飞书官方 SDK
-    implementation("com.larksuite.oapi:oapi-sdk:2.4.0")
+    // 飞书：使用轻量级 OkHttp WebSocket 实现，不再依赖官方 SDK
 
     // 网络请求和 WebSocket
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

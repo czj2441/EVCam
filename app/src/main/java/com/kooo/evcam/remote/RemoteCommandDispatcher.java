@@ -256,6 +256,18 @@ public class RemoteCommandDispatcher {
         }
     }
     
+    /**
+     * 通知时间戳更新（Watchdog 重建录制后调用）
+     * 由 MainActivity 在录制时间戳变化时调用
+     */
+    public void onTimestampUpdated(String newTimestamp) {
+        for (RemoteCommandHandler handler : handlers.values()) {
+            if (handler.isRemoteRecording()) {
+                handler.onTimestampUpdated(newTimestamp);
+            }
+        }
+    }
+    
     // ==================== 辅助方法 ====================
     
     private RemoteCommandHandler getHandler(RemotePlatform platform) {

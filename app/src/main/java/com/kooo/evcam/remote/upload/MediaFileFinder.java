@@ -73,6 +73,84 @@ public class MediaFileFinder {
     }
     
     /**
+     * 查找视频文件（支持多个时间戳）
+     * 用于 Watchdog 重建后查找所有录制的文件
+     * 
+     * @param timestamps 所有录制时间戳列表
+     * @return 视频文件列表，如果未找到返回空列表
+     */
+    public List<File> findVideoFiles(List<String> timestamps) {
+        if (timestamps == null || timestamps.isEmpty()) {
+            AppLog.e(TAG, "时间戳列表为空，无法查找视频文件");
+            return new ArrayList<>();
+        }
+        
+        List<File> allFiles = new ArrayList<>();
+        
+        // 1. 从临时目录查找所有时间戳对应的文件
+        File tempDir = new File(context.getCacheDir(), FileTransferManager.TEMP_VIDEO_DIR);
+        if (tempDir.exists() && tempDir.isDirectory()) {
+            File[] tempFiles = tempDir.listFiles((dir, name) -> {
+                if (!name.endsWith(".mp4") || new File(dir, name).length() == 0) {
+                    return false;
+                }
+                for (String ts : timestamps) {
+                    if (name.startsWith(ts + "_")) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+            
+            if (tempFiles != null && tempFiles.length > 0) {
+                allFiles.addAll(Arrays.asList(tempFiles));
+                AppLog.d(TAG, "从临时目录找到 " + tempFiles.length + " 个视频文件");
+            }
+        }
+        
+        // 2. 从最终目录查找所有时间戳对应的文件
+        File videoDir = StorageHelper.getVideoDir(context);
+        if (videoDir != null && videoDir.exists()) {
+            File[] files = videoDir.listFiles((dir, name) -> {
+                if (!name.endsWith(".mp4")) {
+                    return false;
+                }
+                for (String ts : timestamps) {
+                    if (name.startsWith(ts)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+            
+            if (files != null && files.length > 0) {
+                // 避免重复添加（临时目录和最终目录可能有同名文件）
+                for (File f : files) {
+                    boolean exists = false;
+                    for (File existing : allFiles) {
+                        if (existing.getName().equals(f.getName())) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        allFiles.add(f);
+                    }
+                }
+                AppLog.d(TAG, "从最终目录额外找到视频文件");
+            }
+        }
+        
+        if (allFiles.isEmpty()) {
+            AppLog.e(TAG, "未找到录制的视频文件，时间戳: " + timestamps);
+        } else {
+            AppLog.d(TAG, "总共找到 " + allFiles.size() + " 个视频文件（时间戳数: " + timestamps.size() + "）");
+        }
+        
+        return allFiles;
+    }
+    
+    /**
      * 查找照片文件
      * 
      * @param timestamp 拍照时间戳
