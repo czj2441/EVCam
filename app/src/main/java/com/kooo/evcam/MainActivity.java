@@ -48,6 +48,8 @@ import com.kooo.evcam.wechat.WechatMiniConfig;
 import com.kooo.evcam.wechat.WechatRemoteManager;
 import com.kooo.evcam.remote.RemoteCommandDispatcher;
 import com.kooo.evcam.remote.handler.RemoteCommandHandler;
+import com.kooo.evcam.playback.PlaybackFragmentNew;
+import com.kooo.evcam.playback.PhotoPlaybackFragmentNew;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -1658,32 +1660,32 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
     }
 
     /**
-     * 显示回看界面
+     * 显示回看界面（新版四宫格界面）
      */
     private void showPlaybackInterface() {
         // 隐藏录制布局，显示Fragment容器
         recordingLayout.setVisibility(View.GONE);
         fragmentContainer.setVisibility(View.VISIBLE);
 
-        // 显示PlaybackFragment
+        // 显示新版PlaybackFragment（支持四宫格预览）
         FragmentManager fragmentManager = getSupportFragmentManager();
         FragmentTransaction transaction = fragmentManager.beginTransaction();
-        transaction.replace(R.id.fragment_container, new PlaybackFragment());
+        transaction.replace(R.id.fragment_container, new PlaybackFragmentNew());
         transaction.commit();
     }
 
     /**
-     * 显示图片回看界面
+     * 显示图片回看界面（新版四宫格界面）
      */
     private void showPhotoPlaybackInterface() {
         // 隐藏录制布局，显示Fragment容器
         recordingLayout.setVisibility(View.GONE);
         fragmentContainer.setVisibility(View.VISIBLE);
 
-        // 显示PhotoPlaybackFragment
+        // 显示新版PhotoPlaybackFragment（支持四宫格预览）
         FragmentManager fragmentManager = getSupportFragmentManager();
         FragmentTransaction transaction = fragmentManager.beginTransaction();
-        transaction.replace(R.id.fragment_container, new PhotoPlaybackFragment());
+        transaction.replace(R.id.fragment_container, new PhotoPlaybackFragmentNew());
         transaction.commit();
     }
 
@@ -3889,9 +3891,9 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         
         // 根据是否正在录制，决定如何处理摄像头
         if (cameraManager != null) {
-            if (isRecording) {
-                // 正在录制：保持摄像头连接（有前台服务保护）
-                AppLog.d(TAG, "Recording in progress, keeping cameras connected (protected by foreground service)");
+            if (isRecording || isRemoteRecording) {
+                // 正在录制（手动或远程）：保持摄像头连接（有前台服务保护）
+                AppLog.d(TAG, "Recording in progress (manual=" + isRecording + ", remote=" + isRemoteRecording + "), keeping cameras connected");
             } else if (isAutoRecordingPending) {
                 // 自动录制正在等待中：保持摄像头连接（开机自启动场景）
                 AppLog.d(TAG, "Auto recording pending, keeping cameras connected for startup recording");
