@@ -151,22 +151,19 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- 上方：预览区 -->
+        <!-- 上方：预览区（固定16:9比例，优先占据空间） -->
         <LinearLayout
             android:id="@+id/preview_container"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="5"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@color/preview_background">
 
-            <!-- 四宫格预览区（居中显示） -->
-            <FrameLayout
+            <!-- 四宫格预览区（16:9固定比例） -->
+            <com.kooo.evcam.AspectRatio16x9Container
                 android:id="@+id/grid_container"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:gravity="center">
+                android:layout_height="wrap_content">
 
                 <!-- 多路模式：四宫格 -->
                 <LinearLayout
@@ -407,7 +404,7 @@
                         android:textColor="@color/text_hint"
                         android:textSize="16sp" />
                 </LinearLayout>
-            </FrameLayout>
+            </com.kooo.evcam.AspectRatio16x9Container>
 
             <!-- 底部控制栏：摄像头切换按钮 -->
             <LinearLayout
@@ -432,12 +429,12 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 下方：图片列表 -->
+        <!-- 下方：图片列表（占据剩余空间） -->
         <FrameLayout
             android:id="@+id/list_container"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="5"
+            android:layout_weight="1"
             android:background="@color/page_background">
 
             <androidx.recyclerview.widget.RecyclerView

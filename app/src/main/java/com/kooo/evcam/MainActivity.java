@@ -95,6 +95,7 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
     private boolean isInBackground = false;  // 是否在后台
     private boolean pendingRemoteCommand = false;  // 是否有待处理的远程命令
     private boolean isRemoteWakeUp = false;  // 是否是远程命令唤醒的（用于完成后自动退回后台）
+    private boolean hasBeenResumedOnce = false;  // Activity 是否已经完全恢复过一次（用于区分新创建和已存在）
     
     // 防双击保护
     private long lastRecordButtonClickTime = 0;  // 上次点击录制按钮的时间
@@ -503,17 +504,23 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
             pendingRemoteCommand = true;
             
             // 判断是否应该在完成后返回后台
-            boolean shouldReturnToBackground = isInBackground && !isRecording;
+            boolean isRemoteWakeUpIntent = intent.getBooleanExtra("remote_wake_up", false);
+            boolean wasAlreadyInForeground = hasBeenResumedOnce && !isInBackground;
+            boolean shouldReturnToBackground = isRemoteWakeUpIntent && !isRecording && !wasAlreadyInForeground;
+            
             if (shouldReturnToBackground) {
                 isRemoteWakeUp = true;
                 AppLog.d(TAG, "Telegram: Remote wake-up flag set, will return to background after completion");
+            } else if (wasAlreadyInForeground) {
+                isRemoteWakeUp = false;
+                AppLog.d(TAG, "Telegram: App was in foreground, will stay in foreground after completion");
             } else {
                 isRemoteWakeUp = false;
-                AppLog.d(TAG, "Telegram: App was active, will stay in foreground after completion");
+                AppLog.d(TAG, "Telegram: Recording in progress or no wake-up flag, staying in foreground");
             }
             
-            // 延迟执行命令，等待摄像头准备好（与钉钉相同的逻辑）
-            int delay = isInBackground ? 3000 : 1500;
+            // 延迟执行命令，等待摄像头准备好
+            int delay = wasAlreadyInForeground ? 1500 : 3000;
             final String finalAction = action;
             
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
@@ -561,17 +568,23 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
             pendingRemoteCommand = true;
             
             // 判断是否应该在完成后返回后台
-            boolean shouldReturnToBackground = isInBackground && !isRecording;
+            boolean isRemoteWakeUpIntent = intent.getBooleanExtra("remote_wake_up", false);
+            boolean wasAlreadyInForeground = hasBeenResumedOnce && !isInBackground;
+            boolean shouldReturnToBackground = isRemoteWakeUpIntent && !isRecording && !wasAlreadyInForeground;
+            
             if (shouldReturnToBackground) {
                 isRemoteWakeUp = true;
                 AppLog.d(TAG, "Feishu: Remote wake-up flag set, will return to background after completion");
+            } else if (wasAlreadyInForeground) {
+                isRemoteWakeUp = false;
+                AppLog.d(TAG, "Feishu: App was in foreground, will stay in foreground after completion");
             } else {
                 isRemoteWakeUp = false;
-                AppLog.d(TAG, "Feishu: App was active, will stay in foreground after completion");
+                AppLog.d(TAG, "Feishu: Recording in progress or no wake-up flag, staying in foreground");
             }
             
             // 延迟执行命令，等待摄像头准备好
-            int delay = isInBackground ? 3000 : 1500;
+            int delay = wasAlreadyInForeground ? 1500 : 3000;
             final String finalAction = action;
             final String finalChatId = chatId;
             
@@ -619,17 +632,23 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
             pendingRemoteCommand = true;
             
             // 判断是否应该在完成后返回后台
-            boolean shouldReturnToBackground = isInBackground && !isRecording;
+            boolean isRemoteWakeUpIntent = intent.getBooleanExtra("remote_wake_up", false);
+            boolean wasAlreadyInForeground = hasBeenResumedOnce && !isInBackground;
+            boolean shouldReturnToBackground = isRemoteWakeUpIntent && !isRecording && !wasAlreadyInForeground;
+            
             if (shouldReturnToBackground) {
                 isRemoteWakeUp = true;
                 AppLog.d(TAG, "WeChat: Remote wake-up flag set, will return to background after completion");
+            } else if (wasAlreadyInForeground) {
+                isRemoteWakeUp = false;
+                AppLog.d(TAG, "WeChat: App was in foreground, will stay in foreground after completion");
             } else {
                 isRemoteWakeUp = false;
-                AppLog.d(TAG, "WeChat: App was active, will stay in foreground after completion");
+                AppLog.d(TAG, "WeChat: Recording in progress or no wake-up flag, staying in foreground");
             }
             
             // 延迟执行命令，等待摄像头准备好
-            int delay = isInBackground ? 3000 : 1500;
+            int delay = wasAlreadyInForeground ? 1500 : 3000;
             final String finalAction = action;
             final String finalCommandId = commandId;
             final int finalDuration = duration;
@@ -676,20 +695,31 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         pendingRemoteCommand = true;
         
         // 判断是否应该在完成后返回后台
-        // 只有当应用是从真正的后台被唤醒时才返回后台
-        // 如果应用正在录制（非远程录制），说明用户正在使用，不应该返回后台
-        boolean shouldReturnToBackground = isInBackground && !isRecording;
+        // 逻辑：
+        // 1. 如果正在录制，保持前台（用户可能正在使用）
+        // 2. 如果 Intent 有 remote_wake_up=true（从 WakeUpHelper 发起）：
+        //    - 如果应用之前就在前台（hasBeenResumedOnce=true 且 isInBackground=false），保持前台
+        //    - 否则是从后台唤醒的，返回后台
+        boolean isRemoteWakeUpIntent = intent.getBooleanExtra("remote_wake_up", false);
+        boolean wasAlreadyInForeground = hasBeenResumedOnce && !isInBackground;
+        boolean shouldReturnToBackground = isRemoteWakeUpIntent && !isRecording && !wasAlreadyInForeground;
+        
         if (shouldReturnToBackground) {
             isRemoteWakeUp = true;
             AppLog.d(TAG, "Remote wake-up flag set, will return to background after completion");
+        } else if (isRecording) {
+            isRemoteWakeUp = false;
+            AppLog.d(TAG, "Recording in progress, will stay in foreground after completion");
+        } else if (wasAlreadyInForeground) {
+            isRemoteWakeUp = false;
+            AppLog.d(TAG, "App was already in foreground, will stay in foreground after completion");
         } else {
             isRemoteWakeUp = false;
-            AppLog.d(TAG, "App was active (recording or in foreground), will stay in foreground after completion");
+            AppLog.d(TAG, "No remote_wake_up flag, will stay in foreground");
         }
 
         // 延迟执行命令，等待摄像头准备好
-        // 如果从后台唤醒，摄像头需要时间重新连接
-        int delay = isInBackground ? 3000 : 1500;
+        int delay = wasAlreadyInForeground ? 1500 : 3000;
         
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             pendingRemoteCommand = false;
@@ -3973,7 +4003,13 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         super.onResume();
         boolean wasInBackground = isInBackground;
         isInBackground = false;
-        AppLog.d(TAG, "onResume called, wasInBackground=" + wasInBackground + ", isRecording=" + isRecording);
+        
+        // 标记 Activity 已经完全恢复过一次（用于区分新创建和已存在的 Activity）
+        // 这个标记在 onCreate 后第一次 onResume 时设为 true
+        boolean wasFirstResume = !hasBeenResumedOnce;
+        hasBeenResumedOnce = true;
+        
+        AppLog.d(TAG, "onResume called, wasInBackground=" + wasInBackground + ", isRecording=" + isRecording + ", firstResume=" + wasFirstResume);
         
         // 通知悬浮窗服务：应用进入前台，隐藏悬浮窗
         if (appConfig.isFloatingWindowEnabled()) {
