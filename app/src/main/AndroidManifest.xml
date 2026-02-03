@@ -116,6 +116,11 @@
             android:name=".FloatingWindowService"
             android:exported="false" />
 
+        <!-- 副屏显示服务 -->
+        <service
+            android:name=".SecondaryDisplayService"
+            android:exported="false" />
+
         <!-- 无障碍服务：用于保活 -->
         <service
             android:name=".KeepAliveAccessibilityService"

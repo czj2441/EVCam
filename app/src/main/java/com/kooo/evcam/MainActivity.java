@@ -90,6 +90,10 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
     private AutoFitTextureView textureFront, textureBack, textureLeft, textureRight;
     private Button btnStartRecord, btnExit, btnTakePhoto;
     private MultiCameraManager cameraManager;
+
+    public MultiCameraManager getCameraManager() {
+        return cameraManager;
+    }
     private ImageAdjustManager imageAdjustManager;  // 亮度/降噪调节管理器
     private ImageAdjustFloatingWindow imageAdjustFloatingWindow;  // 亮度/降噪调节悬浮窗
     private int textureReadyCount = 0;  // 记录准备好的TextureView数量
@@ -1713,6 +1717,9 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
             } else if (itemId == R.id.nav_heartbeat) {
                 // 显示心跳推图界面
                 showHeartbeatInterface();
+            } else if (itemId == R.id.nav_secondary_display) {
+                // 显示副屏显示界面
+                showSecondaryDisplayInterface();
             } else if (itemId == R.id.nav_settings) {
                 showSettingsInterface();
             }
@@ -1875,7 +1882,7 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
     /**
      * 显示录制界面
      */
-    private void showRecordingInterface() {
+    public void showRecordingInterface() {
         // 清除所有Fragment
         FragmentManager fragmentManager = getSupportFragmentManager();
         for (Fragment fragment : fragmentManager.getFragments()) {
@@ -2191,6 +2198,21 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         FragmentManager fragmentManager = getSupportFragmentManager();
         FragmentTransaction transaction = fragmentManager.beginTransaction();
         transaction.replace(R.id.fragment_container, new SettingsFragment());
+        transaction.commit();
+    }
+
+    /**
+     * 显示副屏显示设置界面
+     */
+    private void showSecondaryDisplayInterface() {
+        // 隐藏录制布局，显示Fragment容器
+        recordingLayout.setVisibility(View.GONE);
+        fragmentContainer.setVisibility(View.VISIBLE);
+
+        // 显示SecondaryDisplaySettingsFragment
+        FragmentManager fragmentManager = getSupportFragmentManager();
+        FragmentTransaction transaction = fragmentManager.beginTransaction();
+        transaction.replace(R.id.fragment_container, new SecondaryDisplaySettingsFragment());
         transaction.commit();
     }
 

@@ -50,6 +50,18 @@ public class AppConfig {
     // 录制状态显示配置
     private static final String KEY_RECORDING_STATS_ENABLED = "recording_stats_enabled";  // 录制状态显示开关
     
+    // 副屏显示配置
+    private static final String KEY_SECONDARY_DISPLAY_ENABLED = "secondary_display_enabled";  // 副屏显示开关
+    private static final String KEY_SECONDARY_DISPLAY_CAMERA = "secondary_display_camera";    // 副屏显示的摄像头位置
+    private static final String KEY_SECONDARY_DISPLAY_ID = "secondary_display_id";            // 副屏 Display ID
+    private static final String KEY_SECONDARY_DISPLAY_X = "secondary_display_x";              // 副屏位置X
+    private static final String KEY_SECONDARY_DISPLAY_Y = "secondary_display_y";              // 副屏位置Y
+    private static final String KEY_SECONDARY_DISPLAY_WIDTH = "secondary_display_width";      // 副屏宽度
+    private static final String KEY_SECONDARY_DISPLAY_HEIGHT = "secondary_display_height";    // 副屏高度
+    private static final String KEY_SECONDARY_DISPLAY_ROTATION = "secondary_display_rotation"; // 副屏旋转角度
+    private static final String KEY_SECONDARY_DISPLAY_BORDER = "secondary_display_border";    // 是否显示白边框
+    private static final String KEY_SECONDARY_DISPLAY_ORIENTATION = "secondary_display_orientation"; // 屏幕方向（0/90/180/270）
+    
     // 时间角标配置
     private static final String KEY_TIMESTAMP_WATERMARK_ENABLED = "timestamp_watermark_enabled";  // 时间角标开关
     
@@ -1297,6 +1309,103 @@ public class AppConfig {
     public boolean isRecordingStatsEnabled() {
         // 默认开启录制状态显示
         return prefs.getBoolean(KEY_RECORDING_STATS_ENABLED, true);
+    }
+    
+    // ==================== 副屏显示配置相关方法 ====================
+    
+    /**
+     * 设置副屏显示开关
+     */
+    public void setSecondaryDisplayEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_SECONDARY_DISPLAY_ENABLED, enabled).apply();
+        AppLog.d(TAG, "副屏显示设置: " + (enabled ? "启用" : "禁用"));
+    }
+    
+    public boolean isSecondaryDisplayEnabled() {
+        return prefs.getBoolean(KEY_SECONDARY_DISPLAY_ENABLED, false);
+    }
+    
+    /**
+     * 设置副屏显示的摄像头位置
+     */
+    public void setSecondaryDisplayCamera(String position) {
+        prefs.edit().putString(KEY_SECONDARY_DISPLAY_CAMERA, position).apply();
+    }
+    
+    public String getSecondaryDisplayCamera() {
+        return prefs.getString(KEY_SECONDARY_DISPLAY_CAMERA, "front");
+    }
+    
+    /**
+     * 设置副屏 Display ID
+     */
+    public void setSecondaryDisplayId(int displayId) {
+        prefs.edit().putInt(KEY_SECONDARY_DISPLAY_ID, displayId).apply();
+    }
+    
+    public int getSecondaryDisplayId() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_ID, 0); // 0 为默认主屏，通常副屏从1开始
+    }
+    
+    /**
+     * 设置副屏位置和大小
+     */
+    public void setSecondaryDisplayBounds(int x, int y, int width, int height) {
+        prefs.edit()
+            .putInt(KEY_SECONDARY_DISPLAY_X, x)
+            .putInt(KEY_SECONDARY_DISPLAY_Y, y)
+            .putInt(KEY_SECONDARY_DISPLAY_WIDTH, width)
+            .putInt(KEY_SECONDARY_DISPLAY_HEIGHT, height)
+            .apply();
+    }
+    
+    public int getSecondaryDisplayX() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_X, 0);
+    }
+    
+    public int getSecondaryDisplayY() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_Y, 0);
+    }
+    
+    public int getSecondaryDisplayWidth() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_WIDTH, 480);
+    }
+    
+    public int getSecondaryDisplayHeight() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_HEIGHT, 320);
+    }
+    
+    /**
+     * 设置副屏旋转角度
+     */
+    public void setSecondaryDisplayRotation(int rotation) {
+        prefs.edit().putInt(KEY_SECONDARY_DISPLAY_ROTATION, rotation).apply();
+    }
+    
+    public int getSecondaryDisplayRotation() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_ROTATION, 0);
+    }
+    
+    /**
+     * 设置是否显示白边框
+     */
+    public void setSecondaryDisplayBorderEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_SECONDARY_DISPLAY_BORDER, enabled).apply();
+    }
+    
+    public boolean isSecondaryDisplayBorderEnabled() {
+        return prefs.getBoolean(KEY_SECONDARY_DISPLAY_BORDER, false);
+    }
+    
+    /**
+     * 设置屏幕方向
+     */
+    public void setSecondaryDisplayOrientation(int orientation) {
+        prefs.edit().putInt(KEY_SECONDARY_DISPLAY_ORIENTATION, orientation).apply();
+    }
+    
+    public int getSecondaryDisplayOrientation() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_ORIENTATION, 0);
     }
     
     // ==================== 时间角标配置相关方法 ====================

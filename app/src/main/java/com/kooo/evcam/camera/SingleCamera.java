@@ -58,6 +58,7 @@ public class SingleCamera {
 
     private Size previewSize;
     private Surface recordSurface;  // 录制Surface
+    private Surface secondarySurface; // 副屏预览Surface
     private Surface previewSurface;  // 预览Surface（缓存以避免重复创建）
     private ImageReader imageReader;  // 用于拍照的ImageReader
     private boolean singleOutputMode = false;  // 单一输出模式（用于不支持多路输出的车机平台）
@@ -256,6 +257,19 @@ public class SingleCamera {
                     ", isValid=" + surface.isValid() + ", mode=" + (isCodec ? "Codec" : "MediaRecorder"));
         } else {
             AppLog.w(TAG, "Record surface set to NULL for camera " + cameraId);
+        }
+    }
+
+    /**
+     * 设置副屏预览Surface
+     * @param surface 副屏预览Surface
+     */
+    public void setSecondarySurface(Surface surface) {
+        this.secondarySurface = surface;
+        if (surface != null) {
+            AppLog.d(TAG, "Secondary surface set for camera " + cameraId + ": " + surface + ", isValid=" + surface.isValid());
+        } else {
+            AppLog.d(TAG, "Secondary surface cleared for camera " + cameraId);
         }
     }
 
@@ -976,6 +990,13 @@ public class SingleCamera {
                         previewRequestBuilder.addTarget(recordSurface);
                         AppLog.d(TAG, "Added record surface to camera " + cameraId + " (isValid=" + isValid + ")");
                     }
+                }
+
+                // 添加副屏预览 Surface
+                if (secondarySurface != null && secondarySurface.isValid()) {
+                    surfaces.add(secondarySurface);
+                    previewRequestBuilder.addTarget(secondarySurface);
+                    AppLog.d(TAG, "Added secondary surface to camera " + cameraId);
                 }
             }
 
