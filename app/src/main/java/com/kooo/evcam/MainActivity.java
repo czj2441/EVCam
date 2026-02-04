@@ -1022,9 +1022,6 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         textureLeft = findViewById(R.id.texture_left);  // 1摄和2摄布局中为null
         textureRight = findViewById(R.id.texture_right);  // 1摄和2摄布局中为null
         
-        // 设置长按事件，长按摄像头预览可弹出独立悬浮窗
-        setupCameraPreviewLongClick();
-        
         btnStartRecord = findViewById(R.id.btn_start_record);
         btnExit = findViewById(R.id.btn_exit);
         btnTakePhoto = findViewById(R.id.btn_take_photo);
@@ -5065,68 +5062,16 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
         }
     }
     
-    // ==================== 悬浮窗相关方法 ====================
-    
-    /**
-     * 设置摄像头预览长按事件
-     * 长按摄像头预览可弹出独立悬浮窗显示该摄像头画面
-     */
-    private void setupCameraPreviewLongClick() {
-        View.OnLongClickListener longClickListener = v -> {
-            String position = null;
-            if (v == textureFront) {
-                position = "front";
-            } else if (v == textureBack) {
-                position = "back";
-            } else if (v == textureLeft) {
-                position = "left";
-            } else if (v == textureRight) {
-                position = "right";
-            }
-            
-            if (position != null) {
-                showCameraPreviewFloating(position);
-                return true;
-            }
-            return false;
-        };
-        
-        // 为每个 TextureView 设置长按事件
-        if (textureFront != null) {
-            textureFront.setOnLongClickListener(longClickListener);
-        }
-        if (textureBack != null) {
-            textureBack.setOnLongClickListener(longClickListener);
-        }
-        if (textureLeft != null) {
-            textureLeft.setOnLongClickListener(longClickListener);
-        }
-        if (textureRight != null) {
-            textureRight.setOnLongClickListener(longClickListener);
-        }
-    }
+    // ==================== 静态实例访问 ====================
     
     /**
      * 获取 MainActivity 实例
-     * 用于悬浮窗等外部组件访问摄像头
+     * 用于 CameraForegroundService 检查 Activity 是否在运行
      * 
      * @return MainActivity 实例，如果 Activity 未创建或已销毁则返回 null
      */
     public static MainActivity getInstance() {
         return instance;
-    }
-    
-    /**
-     * 根据位置获取对应的摄像头
-     * 
-     * @param position 摄像头位置（front/back/left/right）
-     * @return SingleCamera 实例，如果不存在则返回 null
-     */
-    public SingleCamera getCameraByPosition(String position) {
-        if (cameraManager == null) {
-            return null;
-        }
-        return cameraManager.getCamera(position);
     }
     
     /**
