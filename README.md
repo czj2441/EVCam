@@ -45,7 +45,7 @@
 - **最低版本**: Android 9.0 (API 28)
 - **目标版本**: Android 14+ (API 36)
 - **摄像头API**: Camera2 API
-- **视频编码**: MediaRecorder（硬编码）/ OpenGL + MediaCodec（软编码）
+- **视频编码**: MediaRecorder（硬编码）/ MediaCodec（软编码）
 - **构建工具**: Gradle 8.x (Kotlin DSL)
 - **UI组件**: Material Design Components
 - **图片加载**: Glide 4.16.0
@@ -60,8 +60,8 @@
 |------|-----------|---------|------|
 | 银河E5 | 4 | MediaRecorder | 默认车型 |
 | 银河E5-多按钮 | 4 | MediaRecorder | 简化操作界面 |
-| 银河L6/L7 | 4 | OpenGL+MediaCodec | 自动适配编码模式 |
-| 银河L7-多按钮 | 4 | OpenGL+MediaCodec | 简化操作界面 |
+| 银河L6/L7 | 4 | MediaCodec | 自动适配编码模式 |
+| 银河L7-多按钮 | 4 | MediaCodec | 简化操作界面 |
 | 手机 | 2 | MediaRecorder | 前后摄像头 |
 | 自定义车型 | 1/2/4 | 可选 | 完全自定义配置 |
 
@@ -298,7 +298,7 @@ adb install app\build\outputs\apk\debug\app-debug.apk
 | 设置项 | 说明 |
 |--------|------|
 | 车型选择 | 选择车型或自定义摄像头配置 |
-| 录制模式 | 自动/MediaRecorder/OpenGL+MediaCodec |
+| 录制模式 | 自动/MediaRecorder/MediaCodec |
 | 分段时长 | 1分钟/3分钟/5分钟 |
 | 存储位置 | 内部存储/U盘 |
 | 存储限制 | 视频和照片的最大存储空间（GB） |
@@ -344,7 +344,7 @@ EVCam/
 │   ├── MultiCameraManager.java   # 多摄像头编排器
 │   ├── SingleCamera.java          # 单摄像头封装（Camera2 API）
 │   ├── VideoRecorder.java         # 视频录制器（MediaRecorder）
-│   ├── CodecVideoRecorder.java    # 视频录制器（OpenGL+MediaCodec）
+│   ├── CodecVideoRecorder.java    # 视频录制器（MediaCodec）
 │   ├── EglSurfaceEncoder.java     # EGL Surface 编码器
 │   ├── ImageAdjustManager.java    # 图像调节管理器
 │   ├── CameraCallback.java        # 摄像头事件回调接口

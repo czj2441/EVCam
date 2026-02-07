@@ -24,12 +24,12 @@ import java.util.Locale;
 public class PreviewCorrectionFloatingWindow {
     private static final String TAG = "PreviewCorrectionFloating";
 
-    private static final float SCALE_MIN = 0.10f;
-    private static final float SCALE_MAX = 8.00f;
+    private static final float SCALE_MIN = 0.50f;
+    private static final float SCALE_MAX = 3.00f;
     private static final float SCALE_STEP = 0.01f;
 
-    private static final float TRANSLATE_MIN = -5.00f;
-    private static final float TRANSLATE_MAX = 5.00f;
+    private static final float TRANSLATE_MIN = -1.50f;
+    private static final float TRANSLATE_MAX = 1.50f;
     private static final float TRANSLATE_STEP = 0.01f;
 
     private final Context context;

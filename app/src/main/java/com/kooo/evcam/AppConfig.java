@@ -91,6 +91,9 @@ public class AppConfig {
     private static final String KEY_MOCK_TURN_SIGNAL_FLOATING_X = "mock_turn_signal_floating_x";             // 悬浮模拟按钮X
     private static final String KEY_MOCK_TURN_SIGNAL_FLOATING_Y = "mock_turn_signal_floating_y";             // 悬浮模拟按钮Y
 
+    // 补盲悬浮窗动效
+    private static final String KEY_FLOATING_WINDOW_ANIMATION_ENABLED = "floating_window_animation_enabled"; // 悬浮窗开启/关闭动效
+
     // 补盲画面矫正 (Matrix)
     private static final String KEY_BLIND_SPOT_CORRECTION_ENABLED = "blind_spot_correction_enabled";
     private static final String KEY_BLIND_SPOT_CORRECTION_PREFIX = "blind_spot_correction_";
@@ -177,7 +180,7 @@ public class AppConfig {
     // 录制模式常量
     public static final String RECORDING_MODE_AUTO = "auto";  // 自动（根据车型决定）
     public static final String RECORDING_MODE_MEDIA_RECORDER = "media_recorder";  // MediaRecorder（硬件编码）
-    public static final String RECORDING_MODE_CODEC = "codec";  // OpenGL + MediaCodec（软编码）
+    public static final String RECORDING_MODE_CODEC = "codec";  // MediaCodec（软编码）
     
     // 分辨率配置相关键名
     private static final String KEY_TARGET_RESOLUTION = "target_resolution";  // 目标分辨率
@@ -428,9 +431,8 @@ public class AppConfig {
             // 强制使用 MediaRecorder 模式
             return false;
         } else {
-            // 自动模式：L6/L7、L7-多按钮、26款星舰7 车型使用 Codec 模式
-            String carModel = getCarModel();
-            return CAR_MODEL_L7.equals(carModel) || CAR_MODEL_L7_MULTI.equals(carModel) || CAR_MODEL_XINGHAN_7.equals(carModel);
+            // 自动模式：所有车型默认使用 MediaCodec 模式
+            return true;
         }
     }
     
@@ -1822,7 +1824,17 @@ public class AppConfig {
     public int getMockTurnSignalFloatingY() {
         return prefs.getInt(KEY_MOCK_TURN_SIGNAL_FLOATING_Y, 200);
     }
-    
+
+    // ==================== 悬浮窗动效配置 ====================
+
+    public void setFloatingWindowAnimationEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_FLOATING_WINDOW_ANIMATION_ENABLED, enabled).apply();
+    }
+
+    public boolean isFloatingWindowAnimationEnabled() {
+        return prefs.getBoolean(KEY_FLOATING_WINDOW_ANIMATION_ENABLED, true);
+    }
+
     // ==================== 时间角标配置相关方法 ====================
     
     /**

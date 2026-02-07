@@ -2,6 +2,9 @@ package com.kooo.evcam;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -12,7 +15,6 @@ import java.util.regex.Pattern;
 public class LogcatSignalObserver {
     private static final String TAG = "LogcatSignalObserver";
     
-    private static final String LOGCAT_CMD = "logcat -v brief *:I";
     private static final Pattern SIGNAL_PATTERN = Pattern.compile("data1 = (\\d+)");
 
     public interface SignalListener {
@@ -40,7 +42,13 @@ public class LogcatSignalObserver {
             Process process = null;
             BufferedReader reader = null;
             try {
-                process = Runtime.getRuntime().exec(LOGCAT_CMD);
+                // 使用 -T 参数从当前时间开始读取，完全跳过历史缓冲区。
+                // 避免冷启动时读到旧的转向灯信号导致误触发补盲画面。
+                SimpleDateFormat sdf = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US);
+                String now = sdf.format(new Date());
+                process = Runtime.getRuntime().exec(new String[]{
+                    "logcat", "-v", "brief", "-T", now, "*:I"
+                });
                 reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
                 
                 String line;

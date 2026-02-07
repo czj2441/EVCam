@@ -57,10 +57,6 @@ public class BlindSpotService extends Service {
     private Runnable secondaryRetryRunnable;
     private int secondaryRetryCount = 0;
     private String previewCameraPos = null;
-    private WindowManager.LayoutParams secondaryParams;
-    private android.animation.ValueAnimator secondaryAnimator;
-    private boolean pendingSecondaryShowAnimation = false;
-    private Runnable secondaryShowAnimFallback;
 
     private AppConfig appConfig;
     private DisplayManager displayManager;
@@ -78,11 +74,10 @@ public class BlindSpotService extends Service {
     }
 
     private void initSignalObserver() {
-        // 记录启动时间，用于跳过 logcat 缓冲区中的历史日志
-        // logcat 进程启动时会先输出缓冲区内所有旧日志，可能包含之前的转向灯信号，
-        // 导致服务刚启动就误触发补盲画面。2 秒预热期足够刷完历史缓冲。
+        // 安全兜底：即使 logcat -T 已从源头跳过历史缓冲，
+        // 仍保留 500ms 预热期以防极端情况（如系统时间跳变）
         final long observerStartTime = System.currentTimeMillis();
-        final long WARMUP_MS = 2000;
+        final long WARMUP_MS = 500;
 
         signalObserver = new LogcatSignalObserver((line, data1) -> {
             if (System.currentTimeMillis() - observerStartTime < WARMUP_MS) return;
@@ -226,13 +221,20 @@ public class BlindSpotService extends Service {
         
         if (secondaryCamera != null && secondaryTextureView != null && secondaryTextureView.isAvailable()) {
             if (secondaryCachedSurface == null || !secondaryCachedSurface.isValid()) {
+                Size previewSize = secondaryCamera.getPreviewSize();
+                if (previewSize == null) {
+                    // 冷启动时 openCamera 尚未完成，previewSize 未确定。
+                    // 此时不能创建 Surface，否则 buffer 尺寸会使用 TextureView 的物理尺寸
+                    // （如 318x236），与摄像头输出尺寸（如 1280x800）不匹配，导致 HAL 拒绝。
+                    // 延迟重试，等待摄像头打开后 previewSize 就位。
+                    AppLog.d(TAG, "副屏摄像头预览尺寸未确定（摄像头未打开），延迟绑定: " + cameraPos);
+                    scheduleSecondaryRetry(cameraPos);
+                    return;
+                }
                 if (secondaryCachedSurface != null) secondaryCachedSurface.release();
                 android.graphics.SurfaceTexture surfaceTexture = secondaryTextureView.getSurfaceTexture();
                 if (surfaceTexture != null) {
-                    Size previewSize = secondaryCamera.getPreviewSize();
-                    if (previewSize != null) {
-                        surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-                    }
+                    surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
                 }
                 secondaryCachedSurface = new Surface(secondaryTextureView.getSurfaceTexture());
             }
@@ -254,10 +256,13 @@ public class BlindSpotService extends Service {
                 }, 300);
             } else {
                 // 同一个摄像头或首次绑定：立即设置
-                // 使用 urgent 模式（delay=0），最小化副屏出画面延迟
+                // 使用非紧急模式（delay=100ms），利用防抖机制：
+                // 主屏 TextureView 稍后就绪时会调用 recreateSession(urgent=true)，
+                // 自动取消此处的延迟任务并立即创建包含两个 Surface 的 Session，
+                // 避免多个 urgent recreateSession 同时触发导致会话雪崩
                 AppLog.d(TAG, "副屏绑定新 Surface 并重建 Session: " + cameraPos);
                 secondaryCamera.setSecondaryDisplaySurface(secondaryCachedSurface);
-                secondaryCamera.recreateSession(true);
+                secondaryCamera.recreateSession(false);
             }
             BlindSpotCorrection.apply(secondaryTextureView, appConfig, cameraPos, appConfig.getSecondaryDisplayRotation());
         } else {
@@ -270,9 +275,12 @@ public class BlindSpotService extends Service {
         cancelSecondaryRetry();
         secondaryRetryCount++;
         long delayMs;
-        if (secondaryRetryCount <= 10) {
+        if (secondaryRetryCount <= 5) {
+            // 前5次快速重试（50ms），覆盖冷启动等待 previewSize 就位的场景
+            delayMs = 50;
+        } else if (secondaryRetryCount <= 15) {
             delayMs = 500;
-        } else if (secondaryRetryCount <= 30) {
+        } else if (secondaryRetryCount <= 35) {
             delayMs = 1000;
         } else {
             delayMs = 3000;

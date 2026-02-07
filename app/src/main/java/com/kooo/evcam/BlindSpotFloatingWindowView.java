@@ -325,9 +325,13 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     public void show() {
         try {
             if (this.getParent() == null) {
-                // 设置动效初始状态：完全透明，等待首帧画面到达后再播放动画
-                setScaleX(0.85f);
-                setScaleY(0.85f);
+                boolean animEnabled = appConfig.isFloatingWindowAnimationEnabled();
+
+                // 等待首帧画面到达后再显示，避免黑屏闪烁
+                if (animEnabled) {
+                    setScaleX(0.85f);
+                    setScaleY(0.85f);
+                }
                 params.alpha = 0f;
                 pendingShowAnimation = true;
 
@@ -337,7 +341,7 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
                 }
                 applyTransformNow();
 
-                // 安全超时：如果摄像头迟迟没有推帧，最多等 800ms 后也开始动画
+                // 安全超时：如果摄像头迟迟没有推帧，最多等 800ms 后也直接显示
                 showAnimFallback = () -> {
                     if (pendingShowAnimation) {
                         pendingShowAnimation = false;
@@ -352,6 +356,22 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     }
 
     private void playShowAnimation() {
+        boolean animEnabled = appConfig.isFloatingWindowAnimationEnabled();
+
+        if (!animEnabled) {
+            // 无动效：直接显示
+            setScaleX(1f);
+            setScaleY(1f);
+            params.alpha = 1f;
+            try {
+                if (getParent() != null) {
+                    windowManager.updateViewLayout(BlindSpotFloatingWindowView.this, params);
+                }
+            } catch (Exception e) {}
+            return;
+        }
+
+        // 有动效：缩放 + 淡入
         if (windowAnimator != null) windowAnimator.cancel();
         windowAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f);
         windowAnimator.setDuration(250);
@@ -459,6 +479,17 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
         }
 
         if (getParent() == null) return;
+
+        boolean animEnabled = appConfig.isFloatingWindowAnimationEnabled();
+
+        if (!animEnabled) {
+            // 无动效：直接移除
+            params.alpha = 1f;
+            try {
+                windowManager.removeView(this);
+            } catch (Exception e) {}
+            return;
+        }
 
         // 关闭动效：缩放 + 淡出
         if (windowAnimator != null) {

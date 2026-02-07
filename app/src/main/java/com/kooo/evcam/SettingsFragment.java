@@ -83,7 +83,7 @@ public class SettingsFragment extends Fragment {
     // 录制模式配置相关
     private Spinner recordingModeSpinner;
     private TextView recordingModeDescText;
-    private static final String[] RECORDING_MODE_OPTIONS = {"自动（推荐）", "MediaRecorder", "OpenGL+MediaCodec"};
+    private static final String[] RECORDING_MODE_OPTIONS = {"自动（推荐）", "MediaRecorder", "MediaCodec"};
     private boolean isInitializingRecordingMode = false;
     private String lastAppliedRecordingMode = null;
     
@@ -995,7 +995,7 @@ public class SettingsFragment extends Fragment {
                     modeDesc = "使用系统硬件编码器，兼容性好";
                 } else {
                     newMode = AppConfig.RECORDING_MODE_CODEC;
-                    modeName = "OpenGL+MediaCodec";
+                    modeName = "MediaCodec";
                     modeDesc = "软编码方案，解决部分设备兼容问题";
                 }
                 

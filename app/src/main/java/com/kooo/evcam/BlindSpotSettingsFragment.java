@@ -52,6 +52,7 @@ public class BlindSpotSettingsFragment extends Fragment {
     private SwitchMaterial secondaryBlindSpotSwitch;
     private Button adjustSecondaryBlindSpotWindowButton;
     private SwitchMaterial mockFloatingSwitch;
+    private SwitchMaterial floatingWindowAnimationSwitch;
     private SwitchMaterial blindSpotCorrectionSwitch;
     private Button adjustBlindSpotCorrectionButton;
     private Button logcatDebugButton;
@@ -99,6 +100,7 @@ public class BlindSpotSettingsFragment extends Fragment {
         adjustSecondaryBlindSpotWindowButton = view.findViewById(R.id.btn_adjust_secondary_blind_spot_window);
         
         mockFloatingSwitch = view.findViewById(R.id.switch_mock_floating);
+        floatingWindowAnimationSwitch = view.findViewById(R.id.switch_floating_window_animation);
 
         blindSpotCorrectionSwitch = view.findViewById(R.id.switch_blind_spot_correction);
         adjustBlindSpotCorrectionButton = view.findViewById(R.id.btn_adjust_blind_spot_correction);
@@ -156,6 +158,7 @@ public class BlindSpotSettingsFragment extends Fragment {
         secondaryBlindSpotSwitch.setChecked(appConfig.isSecondaryDisplayEnabled());
 
         mockFloatingSwitch.setChecked(appConfig.isMockTurnSignalFloatingEnabled());
+        floatingWindowAnimationSwitch.setChecked(appConfig.isFloatingWindowAnimationEnabled());
 
         blindSpotCorrectionSwitch.setChecked(appConfig.isBlindSpotCorrectionEnabled());
     }
@@ -257,6 +260,10 @@ public class BlindSpotSettingsFragment extends Fragment {
             }
             appConfig.setSecondaryDisplayEnabled(isChecked);
             BlindSpotService.update(requireContext());
+        });
+
+        floatingWindowAnimationSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            appConfig.setFloatingWindowAnimationEnabled(isChecked);
         });
 
         mockFloatingSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {

@@ -2686,7 +2686,7 @@ public class MainActivity extends AppCompatActivity implements WechatRemoteManag
                 boolean useCodecRecording = appConfig.shouldUseCodecRecording();
                 cameraManager.setCodecRecordingMode(useCodecRecording);
                 String recordingMode = appConfig.getRecordingMode();
-                String modeDesc = useCodecRecording ? "OpenGL + MediaCodec" : "MediaRecorder";
+                String modeDesc = useCodecRecording ? "MediaCodec" : "MediaRecorder";
                 AppLog.d(TAG, "录制模式: " + modeDesc + " (设置: " + recordingMode + ")");
 
                 // 打开所有摄像头
