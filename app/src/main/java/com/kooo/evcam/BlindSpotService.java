@@ -57,6 +57,10 @@ public class BlindSpotService extends Service {
     private Runnable secondaryRetryRunnable;
     private int secondaryRetryCount = 0;
     private String previewCameraPos = null;
+    private WindowManager.LayoutParams secondaryParams;
+    private android.animation.ValueAnimator secondaryAnimator;
+    private boolean pendingSecondaryShowAnimation = false;
+    private Runnable secondaryShowAnimFallback;
 
     private AppConfig appConfig;
     private DisplayManager displayManager;
@@ -139,6 +143,17 @@ public class BlindSpotService extends Service {
         // 确保摄像头已初始化（通过全局 Holder，不依赖 MainActivity）
         com.kooo.evcam.camera.CameraManagerHolder.getInstance().getOrInit(this);
 
+        // --- 副屏窗口预创建 ---
+        // 先创建副屏窗口，让副屏 TextureView 提前进入渲染管线。
+        // openCamera 是异步操作（~200-500ms），在此期间副屏 TextureView 有充足时间完成首帧渲染，
+        // 使 secondaryDisplaySurface 在摄像头打开时已就位，首次 Session 即可包含两个 Surface，
+        // 避免副屏需要额外一次 Session 重建而延迟出画面。
+        if (appConfig.isSecondaryDisplayEnabled()) {
+            if (secondaryFloatingView == null) {
+                showSecondaryDisplay();
+            }
+        }
+
         boolean reuseMain = appConfig.isTurnSignalReuseMainFloating();
 
         if (reuseMain) {
@@ -173,11 +188,8 @@ public class BlindSpotService extends Service {
             dedicatedBlindSpotWindow.setCamera(cameraPos);
         }
 
-        // --- 副屏显示逻辑 ---
+        // --- 副屏摄像头预览 ---
         if (appConfig.isSecondaryDisplayEnabled()) {
-            if (secondaryFloatingView == null) {
-                showSecondaryDisplay();
-            }
             startSecondaryCameraPreviewDirectly(cameraPos);
         }
     }
@@ -242,9 +254,10 @@ public class BlindSpotService extends Service {
                 }, 300);
             } else {
                 // 同一个摄像头或首次绑定：立即设置
+                // 使用 urgent 模式（delay=0），最小化副屏出画面延迟
                 AppLog.d(TAG, "副屏绑定新 Surface 并重建 Session: " + cameraPos);
                 secondaryCamera.setSecondaryDisplaySurface(secondaryCachedSurface);
-                secondaryCamera.recreateSession(false);
+                secondaryCamera.recreateSession(true);
             }
             BlindSpotCorrection.apply(secondaryTextureView, appConfig, cameraPos, appConfig.getSecondaryDisplayRotation());
         } else {
@@ -549,6 +562,11 @@ public class BlindSpotService extends Service {
 
         secondaryWindowManager.updateViewLayout(secondaryFloatingView, params);
         secondaryFloatingView.setRotation(orientation);
+
+        // 应用透明度
+        float alpha = appConfig.getSecondaryDisplayAlpha() / 100f;
+        secondaryFloatingView.setAlpha(alpha);
+
         String cameraPos = currentSignalCamera != null ? currentSignalCamera : (previewCameraPos != null ? previewCameraPos : secondaryDesiredCameraPos);
         BlindSpotCorrection.apply(secondaryTextureView, appConfig, cameraPos, rotation);
         
@@ -574,7 +592,17 @@ public class BlindSpotService extends Service {
         secondaryAttachedDisplayId = displayId;
 
         // 创建对应显示器的 Context
-        Context displayContext = createDisplayContext(display);
+        Context displayContext;
+        try {
+            displayContext = createDisplayContext(display);
+        } catch (Exception e) {
+            AppLog.e(TAG, "创建副屏 Context 失败（APK 资源可能不可用）: " + e.getMessage());
+            return;
+        }
+        if (displayContext.getResources() == null) {
+            AppLog.e(TAG, "副屏 Context 资源为空，跳过显示");
+            return;
+        }
         secondaryWindowManager = (WindowManager) displayContext.getSystemService(Context.WINDOW_SERVICE);
 
         // 加载布局
@@ -679,6 +707,10 @@ public class BlindSpotService extends Service {
             @Override
             public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture surface) {}
         });
+
+        // 应用透明度
+        float alpha = appConfig.getSecondaryDisplayAlpha() / 100f;
+        secondaryFloatingView.setAlpha(alpha);
 
         try {
             secondaryWindowManager.addView(secondaryFloatingView, params);

@@ -64,6 +64,7 @@ public class AppConfig {
     private static final String KEY_SECONDARY_DISPLAY_ROTATION = "secondary_display_rotation"; // 副屏旋转角度
     private static final String KEY_SECONDARY_DISPLAY_BORDER = "secondary_display_border";    // 是否显示白边框
     private static final String KEY_SECONDARY_DISPLAY_ORIENTATION = "secondary_display_orientation"; // 屏幕方向（0/90/180/270）
+    private static final String KEY_SECONDARY_DISPLAY_ALPHA = "secondary_display_alpha"; // 副屏补盲悬浮窗透明度（0-100）
 
     // 主屏悬浮窗配置 (补盲选项新增)
     private static final String KEY_MAIN_FLOATING_ENABLED = "main_floating_enabled";          // 主屏悬浮窗开关
@@ -1463,6 +1464,23 @@ public class AppConfig {
     
     public int getSecondaryDisplayOrientation() {
         return prefs.getInt(KEY_SECONDARY_DISPLAY_ORIENTATION, 180);
+    }
+
+    /**
+     * 设置副屏补盲悬浮窗透明度（0-100）
+     * @param alpha 透明度百分比，0为完全透明，100为完全不透明
+     */
+    public void setSecondaryDisplayAlpha(int alpha) {
+        prefs.edit().putInt(KEY_SECONDARY_DISPLAY_ALPHA, Math.max(0, Math.min(100, alpha))).apply();
+        AppLog.d(TAG, "副屏补盲悬浮窗透明度设置: " + alpha + "%");
+    }
+
+    /**
+     * 获取副屏补盲悬浮窗透明度（0-100）
+     * @return 透明度百分比，默认为100（完全不透明）
+     */
+    public int getSecondaryDisplayAlpha() {
+        return prefs.getInt(KEY_SECONDARY_DISPLAY_ALPHA, 100);
     }
 
     public void setBlindSpotCorrectionEnabled(boolean enabled) {

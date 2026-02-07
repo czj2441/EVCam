@@ -42,6 +42,9 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private int retryBindCount = 0;
     private Runnable retryBindRunnable;
+    private android.animation.ValueAnimator windowAnimator;
+    private boolean pendingShowAnimation = false;
+    private Runnable showAnimFallback;
 
     private float lastX, lastY;
     private float initialX, initialY;
@@ -139,7 +142,16 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
             }
 
             @Override
-            public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture surface) {}
+            public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture surface) {
+                if (pendingShowAnimation) {
+                    pendingShowAnimation = false;
+                    if (showAnimFallback != null) {
+                        mainHandler.removeCallbacks(showAnimFallback);
+                        showAnimFallback = null;
+                    }
+                    playShowAnimation();
+                }
+            }
         });
     }
 
@@ -313,15 +325,49 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     public void show() {
         try {
             if (this.getParent() == null) {
+                // 设置动效初始状态：完全透明，等待首帧画面到达后再播放动画
+                setScaleX(0.85f);
+                setScaleY(0.85f);
+                params.alpha = 0f;
+                pendingShowAnimation = true;
+
                 windowManager.addView(this, params);
                 if (isAdjustPreviewMode) {
                     moveToAdjustPreviewDefaultPosition();
                 }
                 applyTransformNow();
+
+                // 安全超时：如果摄像头迟迟没有推帧，最多等 800ms 后也开始动画
+                showAnimFallback = () -> {
+                    if (pendingShowAnimation) {
+                        pendingShowAnimation = false;
+                        playShowAnimation();
+                    }
+                };
+                mainHandler.postDelayed(showAnimFallback, 800);
             }
         } catch (Exception e) {
             AppLog.e(TAG, "Error showing blind spot floating window: " + e.getMessage());
         }
+    }
+
+    private void playShowAnimation() {
+        if (windowAnimator != null) windowAnimator.cancel();
+        windowAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        windowAnimator.setDuration(250);
+        windowAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f));
+        windowAnimator.addUpdateListener(animation -> {
+            float val = (float) animation.getAnimatedValue();
+            setScaleX(0.85f + 0.15f * val);
+            setScaleY(0.85f + 0.15f * val);
+            params.alpha = val;
+            try {
+                if (getParent() != null) {
+                    windowManager.updateViewLayout(BlindSpotFloatingWindowView.this, params);
+                }
+            } catch (Exception e) {}
+        });
+        windowAnimator.start();
     }
 
     public void applyTransformNow() {
@@ -406,11 +452,46 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     public void dismiss() {
         cancelRetryBind();
         stopCameraPreview();
-        try {
-            windowManager.removeView(this);
-        } catch (Exception e) {
-            // Ignore
+        pendingShowAnimation = false;
+        if (showAnimFallback != null) {
+            mainHandler.removeCallbacks(showAnimFallback);
+            showAnimFallback = null;
         }
+
+        if (getParent() == null) return;
+
+        // 关闭动效：缩放 + 淡出
+        if (windowAnimator != null) {
+            windowAnimator.cancel();
+            windowAnimator = null;
+        }
+        windowAnimator = android.animation.ValueAnimator.ofFloat(1f, 0f);
+        windowAnimator.setDuration(200);
+        windowAnimator.setInterpolator(new android.view.animation.AccelerateInterpolator(1.5f));
+        windowAnimator.addUpdateListener(animation -> {
+            float val = (float) animation.getAnimatedValue();
+            setScaleX(0.85f + 0.15f * val);
+            setScaleY(0.85f + 0.15f * val);
+            params.alpha = val;
+            try {
+                if (getParent() != null) {
+                    windowManager.updateViewLayout(BlindSpotFloatingWindowView.this, params);
+                }
+            } catch (Exception e1) {}
+        });
+        windowAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                params.alpha = 1f;
+                try {
+                    if (getParent() != null) {
+                        windowManager.removeView(BlindSpotFloatingWindowView.this);
+                    }
+                } catch (Exception e) {}
+                windowAnimator = null;
+            }
+        });
+        windowAnimator.start();
     }
 
     private void scheduleRetryBind() {
