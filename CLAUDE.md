@@ -57,7 +57,7 @@ Single-module Android project (`app/`). Package: `com.kooo.evcam`.
 - **VideoRecorder** — MediaRecorder-based recording (hardware encoding, used by E5)
 - **CodecVideoRecorder** — OpenGL + MediaCodec recording (software encoding, used by L6/L7)
 - **BlindSpotService** — Blind-spot monitoring triggered by turn signals
-- **VhalSignalObserver** — gRPC client to vehicle HAL for turn signal detection (localhost:40004)
+- **VhalSignalObserver** — Vehicle API client for turn signal and door detection
 - **StorageHelper** — Storage path management with USB drive detection and fallback
 - **FloatingWindowService** — Overlay floating button showing recording status
 - **CameraForegroundService** — Foreground service for background recording
@@ -152,7 +152,7 @@ These files contain credentials and must be created locally:
 - Camera2 API, MediaRecorder, MediaCodec + OpenGL ES
 - OkHttp 4.12.0 (networking + WebSocket for Feishu)
 - DingTalk Stream SDK 1.3.12
-- gRPC 1.62.2 (VHAL turn signal monitoring)
+- gRPC 1.62.2 (vehicle signal monitoring)
 - Glide 4.16.0, Gson 2.10.1, ZXing 3.5.1
 - AndroidX WorkManager 2.9.0 (keep-alive scheduling)
 

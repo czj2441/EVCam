@@ -192,7 +192,7 @@ public class BlindSpotSettingsFragment extends Fragment {
             turnSignalPresetGroup.check(R.id.rb_preset_car_api);
             customKeywordsLayout.setVisibility(View.GONE);
             carApiStatusText.setVisibility(View.VISIBLE);
-            carApiStatusText.setText("VHAL gRPC 服务状态: 检测中...");
+            carApiStatusText.setText("车辆API 服务状态: 检测中...");
             checkVhalGrpcConnection();
         } else {
             int matchedPreset = findMatchingPreset(currentLeft, currentRight);
@@ -327,10 +327,10 @@ public class BlindSpotSettingsFragment extends Fragment {
                 checkCarSignalManagerConnection();
                 BlindSpotService.update(requireContext());
             } else if (checkedId == R.id.rb_preset_car_api) {
-                // VHAL gRPC 模式
+                // 车辆API 模式
                 customKeywordsLayout.setVisibility(View.GONE);
                 carApiStatusText.setVisibility(View.VISIBLE);
-                carApiStatusText.setText("VHAL gRPC 服务状态: 检测中...");
+                carApiStatusText.setText("车辆API 服务状态: 检测中...");
                 appConfig.setTurnSignalTriggerMode(AppConfig.TRIGGER_MODE_VHAL_GRPC);
                 appConfig.setTurnSignalPresetSelection("car_api");
                 
@@ -572,11 +572,11 @@ public class BlindSpotSettingsFragment extends Fragment {
     }
 
     /**
-     * 异步检查 VHAL gRPC 服务连接状态并更新 UI
+     * 异步检查车辆API 服务连接状态并更新 UI
      */
     private void checkVhalGrpcConnection() {
         if (carApiStatusText == null) return;
-        carApiStatusText.setText("VHAL gRPC 服务状态: 检测中...");
+        carApiStatusText.setText("车辆API 服务状态: 检测中...");
         carApiStatusText.setTextColor(getResources().getColor(R.color.text_secondary, null));
 
         new Thread(() -> {
@@ -585,10 +585,10 @@ public class BlindSpotSettingsFragment extends Fragment {
                 getActivity().runOnUiThread(() -> {
                     if (carApiStatusText == null) return;
                     if (reachable) {
-                        carApiStatusText.setText("VHAL gRPC 服务状态: ✓ 已连接");
+                        carApiStatusText.setText("车辆API 服务状态: ✓ 已连接");
                         carApiStatusText.setTextColor(0xFF4CAF50); // green
                     } else {
-                        carApiStatusText.setText("VHAL gRPC 服务状态: ✗ 服务不可达");
+                        carApiStatusText.setText("车辆API 服务状态: ✗ 服务不可达");
                         carApiStatusText.setTextColor(0xFFF44336); // red
                     }
                 });

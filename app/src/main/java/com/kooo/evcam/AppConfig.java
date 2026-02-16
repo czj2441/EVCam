@@ -98,7 +98,7 @@ public class AppConfig {
 
     // 转向灯触发模式常量
     public static final String TRIGGER_MODE_LOGCAT = "logcat";            // Logcat 日志触发
-    public static final String TRIGGER_MODE_VHAL_GRPC = "vhal_grpc";      // VHAL gRPC 触发（银河E5/26款星舰7，默认）
+    public static final String TRIGGER_MODE_VHAL_GRPC = "vhal_grpc";      // 车辆API 触发（银河E5/26款星舰7，默认）
     public static final String TRIGGER_MODE_CAR_SIGNAL_MANAGER = "car_signal_manager"; // CarSignalManager API 触发（银河L6/L7）
     
     // 兼容性别名（保持向后兼容）
@@ -1934,7 +1934,7 @@ public class AppConfig {
     }
 
     /**
-     * 是否使用 CarAPI 触发模式（兼容性方法，包括 VHAL gRPC）
+     * 是否使用 CarAPI 触发模式（兼容性方法）
      */
     public boolean isCarApiTriggerMode() {
         String mode = getTurnSignalTriggerMode();
@@ -1942,7 +1942,7 @@ public class AppConfig {
     }
 
     /**
-     * 是否使用 VHAL gRPC 触发模式
+     * 是否使用车辆API 触发模式
      */
     public boolean isVhalGrpcTriggerMode() {
         return TRIGGER_MODE_VHAL_GRPC.equals(getTurnSignalTriggerMode());

@@ -141,7 +141,7 @@ public class BlindSpotService extends Service {
     }
 
     private void initVhalSignalObserver() {
-        AppLog.d(TAG, "Using VHAL gRPC trigger mode");
+        AppLog.d(TAG, "Using vehicle API trigger mode");
 
         vhalSignalObserver = new VhalSignalObserver(new VhalSignalObserver.TurnSignalListener() {
             @Override
@@ -159,7 +159,7 @@ public class BlindSpotService extends Service {
 
             @Override
             public void onConnectionStateChanged(boolean connected) {
-                AppLog.d(TAG, "VHAL gRPC connection: " + (connected ? "connected" : "disconnected"));
+                AppLog.d(TAG, "Vehicle API connection: " + (connected ? "connected" : "disconnected"));
             }
         });
         vhalSignalObserver.start();
@@ -196,7 +196,7 @@ public class BlindSpotService extends Service {
 
     /**
      * 初始化车门联动观察者
-     * - VHAL gRPC 模式（E5/星舰7）: 复用已有的 VhalSignalObserver，设置 DoorSignalListener
+     * - 车辆API 模式（E5/星舰7）: 复用已有的信号观察者，设置 DoorSignalListener
      * - CarSignalManager 模式（L6/L7/博越L）: 使用独立的 DoorSignalObserver
      */
     private void initDoorSignalObserver() {
@@ -208,7 +208,7 @@ public class BlindSpotService extends Service {
         AppLog.i(TAG, "🚪 触发模式: " + appConfig.getTurnSignalTriggerMode());
 
         if (appConfig.isVhalGrpcTriggerMode()) {
-            // E5/星舰7: 通过 VHAL gRPC 监听车门状态
+            // E5/星舰7: 通过车辆API 监听车门状态
             initVhalDoorSignalObserver();
         } else if (appConfig.isCarSignalManagerTriggerMode()) {
             // L6/L7/博越L: 通过 CarSignalManager API 监听车门状态
@@ -221,21 +221,21 @@ public class BlindSpotService extends Service {
     }
 
     /**
-     * VHAL gRPC 车门联动（E5/星舰7）
-     * 复用已有的 VhalSignalObserver gRPC 连接，附加 DoorSignalListener
+     * 车辆API 车门联动（E5/星舰7）
+     * 复用已有的信号观察者连接，附加 DoorSignalListener
      */
     private void initVhalDoorSignalObserver() {
-        AppLog.i(TAG, "🚪 使用 VHAL gRPC 车门联动 (E5/星舰7)");
+        AppLog.i(TAG, "� 使用车辆API 车门联动 (E5/星舰7)");
 
         VhalSignalObserver.DoorSignalListener doorCallback = createDoorSignalCallback();
 
         if (vhalSignalObserver != null) {
             // 转向联动已启动 VhalSignalObserver，直接附加车门监听
-            AppLog.i(TAG, "🚪 复用已有的 VhalSignalObserver，附加车门监听");
+            AppLog.i(TAG, "� 复用已有的信号观察者，附加车门监听");
             vhalSignalObserver.setDoorSignalListener(doorCallback);
         } else {
             // 转向联动未启动，需要单独创建 VhalSignalObserver（仅用于车门）
-            AppLog.i(TAG, "🚪 转向联动未启动，创建 VhalSignalObserver 用于车门联动");
+            AppLog.i(TAG, "� 转向联动未启动，创建信号观察者用于车门联动");
             vhalSignalObserver = new VhalSignalObserver(new VhalSignalObserver.TurnSignalListener() {
                 @Override
                 public void onTurnSignal(String direction, boolean on) {
@@ -243,7 +243,7 @@ public class BlindSpotService extends Service {
                 }
                 @Override
                 public void onConnectionStateChanged(boolean connected) {
-                    AppLog.d(TAG, "VHAL gRPC connection (door-only): " + (connected ? "connected" : "disconnected"));
+                    AppLog.d(TAG, "车辆API连接 (door-only): " + (connected ? "connected" : "disconnected"));
                 }
             });
             vhalSignalObserver.setDoorSignalListener(doorCallback);
@@ -278,7 +278,7 @@ public class BlindSpotService extends Service {
     }
 
     /**
-     * 创建 VHAL gRPC 车门信号回调（复用相同的车门处理逻辑）
+     * 创建车辆API 车门信号回调（复用相同的车门处理逻辑）
      */
     private VhalSignalObserver.DoorSignalListener createDoorSignalCallback() {
         return new VhalSignalObserver.DoorSignalListener() {
@@ -294,13 +294,13 @@ public class BlindSpotService extends Service {
 
             @Override
             public void onConnectionStateChanged(boolean connected) {
-                AppLog.i(TAG, "🚪 VHAL车门监听连接状态: " + (connected ? "✅ 已连接" : "❌ 未连接"));
+                AppLog.i(TAG, "� 车辆API车门监听连接状态: " + (connected ? "✅ 已连接" : "❌ 未连接"));
             }
         };
     }
 
     /**
-     * 处理车门打开事件（VHAL gRPC 和 CarSignalManager 共用）
+     * 处理车门打开事件（车辆API 和 CarSignalManager 共用）
      */
     private void handleDoorOpen(String side) {
         AppLog.i(TAG, "🚪🚪🚪 收到车门打开事件: " + side);
@@ -337,7 +337,7 @@ public class BlindSpotService extends Service {
     }
 
     /**
-     * 处理车门关闭事件（VHAL gRPC 和 CarSignalManager 共用）
+     * 处理车门关闭事件（车辆API 和 CarSignalManager 共用）
      */
     private void handleDoorClose(String side) {
         AppLog.i(TAG, "🚪🚪🚪 收到车门关闭事件: " + side);
@@ -1753,7 +1753,7 @@ public class BlindSpotService extends Service {
     // ==================== 定制键唤醒 ====================
 
     /**
-     * 初始化定制键唤醒（配置 VhalSignalObserver 的 CustomKeyListener）
+     * 初始化定制键唤醒（配置信号观察者的 CustomKeyListener）
      */
     private void initCustomKeyWakeup() {
         if (!appConfig.isCustomKeyWakeupEnabled()) return;
@@ -1762,7 +1762,7 @@ public class BlindSpotService extends Service {
                 + "，按钮属性=" + appConfig.getCustomKeyButtonPropId()
                 + "，速度阈值=" + appConfig.getCustomKeySpeedThreshold());
 
-        // 如果 vhalSignalObserver 还未创建，先创建一个
+        // 如果信号观察者还未创建，先创建一个
         if (vhalSignalObserver == null) {
             vhalSignalObserver = new VhalSignalObserver(new VhalSignalObserver.TurnSignalListener() {
                 @Override
@@ -1771,7 +1771,7 @@ public class BlindSpotService extends Service {
                 }
                 @Override
                 public void onConnectionStateChanged(boolean connected) {
-                    AppLog.d(TAG, "VHAL gRPC connection (custom key): " + (connected ? "connected" : "disconnected"));
+                    AppLog.d(TAG, "Vehicle API connection (custom key): " + (connected ? "connected" : "disconnected"));
                 }
             });
             vhalSignalObserver.start();
