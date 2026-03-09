@@ -67,6 +67,8 @@ public class MainFloatingWindowView extends FrameLayout {
         } catch (Exception ignored) {}
     };
 
+    private BlindSpotStatusBarView statusBar;
+
     public MainFloatingWindowView(Context context) {
         this(context, new AppConfig(context));
     }
@@ -80,11 +82,18 @@ public class MainFloatingWindowView extends FrameLayout {
     }
 
     private void init() {
-        LayoutInflater.from(getContext()).inflate(R.layout.presentation_secondary_display, this);
+        boolean isMultiview = appConfig.isMultiviewCarModel();
+        int layoutRes = isMultiview
+                ? R.layout.presentation_secondary_display_multiview
+                : R.layout.presentation_secondary_display;
+        LayoutInflater.from(getContext()).inflate(layoutRes, this);
         textureView = findViewById(R.id.secondary_texture_view);
 
+        statusBar = findViewById(R.id.blind_spot_status_bar);
+        applyStatusBarStyle();
+
         // 圆角裁切
-        float cornerRadius = 8 * getContext().getResources().getDisplayMetrics().density; // 8dp
+        float cornerRadius = 8 * getContext().getResources().getDisplayMetrics().density;
         setOutlineProvider(new android.view.ViewOutlineProvider() {
             @Override
             public void getOutline(View view, android.graphics.Outline outline) {
@@ -651,5 +660,26 @@ public class MainFloatingWindowView extends FrameLayout {
             retryBindRunnable = null;
         }
         retryBindCount = 0;
+    }
+
+    private void applyStatusBarStyle() {
+        if (statusBar == null) return;
+        int style = appConfig.getBlindSpotStatusBarStyle();
+        if (style == BlindSpotStatusBarView.STYLE_OFF) {
+            statusBar.setVisibility(View.GONE);
+        } else {
+            statusBar.setVisibility(View.VISIBLE);
+            statusBar.setAnimationStyle(style);
+            statusBar.setEffectColor(appConfig.getBlindSpotStatusBarColor());
+            int alpha = (int) (appConfig.getBlindSpotStatusBarBgOpacity() / 100f * 255);
+            statusBar.setBackgroundColor(android.graphics.Color.argb(alpha, 0x1A, 0x1A, 0x1A));
+        }
+    }
+
+    public void updateStatusLabel(String cameraPos) {
+        if (statusBar != null) {
+            applyStatusBarStyle();
+            statusBar.setDirection(cameraPos);
+        }
     }
 }

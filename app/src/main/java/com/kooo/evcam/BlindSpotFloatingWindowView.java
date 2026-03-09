@@ -54,6 +54,8 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     private boolean isCurrentlySwapped = false;
     private boolean hasUnsavedResize = false;
 
+    private BlindSpotStatusBarView statusBar;
+
     public BlindSpotFloatingWindowView(Context context, boolean isSetupMode) {
         super(context);
         this.isSetupMode = isSetupMode;
@@ -63,11 +65,17 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
     }
 
     private void init() {
-        LayoutInflater.from(getContext()).inflate(R.layout.view_blind_spot_floating, this);
+        int layoutRes = appConfig.isMultiviewCarModel()
+                ? R.layout.view_blind_spot_floating_multiview
+                : R.layout.view_blind_spot_floating;
+        LayoutInflater.from(getContext()).inflate(layoutRes, this);
         textureView = findViewById(R.id.blind_spot_texture_view);
         View saveLayout = findViewById(R.id.layout_save_config);
         View saveButton = findViewById(R.id.btn_save_blind_spot_config);
         View rotateButton = findViewById(R.id.btn_rotate_blind_spot);
+
+        statusBar = findViewById(R.id.blind_spot_status_bar);
+        applyStatusBarStyle();
 
         currentRotation = appConfig.getTurnSignalFloatingRotation();
         applyTransformNow();
@@ -561,5 +569,26 @@ public class BlindSpotFloatingWindowView extends FrameLayout {
             retryBindRunnable = null;
         }
         retryBindCount = 0;
+    }
+
+    private void applyStatusBarStyle() {
+        if (statusBar == null) return;
+        int style = appConfig.getBlindSpotStatusBarStyle();
+        if (style == BlindSpotStatusBarView.STYLE_OFF) {
+            statusBar.setVisibility(View.GONE);
+        } else {
+            statusBar.setVisibility(View.VISIBLE);
+            statusBar.setAnimationStyle(style);
+            statusBar.setEffectColor(appConfig.getBlindSpotStatusBarColor());
+            int alpha = (int) (appConfig.getBlindSpotStatusBarBgOpacity() / 100f * 255);
+            statusBar.setBackgroundColor(android.graphics.Color.argb(alpha, 0x1A, 0x1A, 0x1A));
+        }
+    }
+
+    public void updateStatusLabel(String cameraPos) {
+        if (statusBar != null) {
+            applyStatusBarStyle();
+            statusBar.setDirection(cameraPos);
+        }
     }
 }
